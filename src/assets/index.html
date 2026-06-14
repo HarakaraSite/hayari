@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>yarr2</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+  <link rel="stylesheet" href="/stylesheets/app.css" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- ── Left: Sidebar ────────────────────────────────────── -->
+    <nav id="sidebar">
+      <div id="sidebar-header">
+        <strong>yarr2</strong>
+        <button id="btn-refresh" class="icon-btn" title="Refresh all (r)">&#x21bb;</button>
+      </div>
+
+      <div id="status-tabs">
+        <button data-filter="unread" class="active">Unread</button>
+        <button data-filter="starred">Starred</button>
+        <button data-filter="all">All</button>
+      </div>
+
+      <ul id="feed-list"></ul>
+
+      <div id="sidebar-footer">
+        <button id="btn-add-feed">+ Feed</button>
+        <button id="btn-settings" class="icon-btn" title="Settings">&#x2699;</button>
+        <a href="/logout" id="btn-logout" class="icon-btn" title="Sign out">&#x23FB;</a>
+      </div>
+    </nav>
+
+    <!-- ── Middle: Item list ─────────────────────────────────── -->
+    <div id="item-list-pane">
+      <div id="item-list-header">
+        <button id="btn-show-sidebar" class="icon-btn" title="Feeds">&#x2630;</button>
+        <span id="item-list-title">Unread</span>
+        <button id="btn-mark-all-read" class="outline small" title="Mark all read (R)">&#x2713; All</button>
+      </div>
+      <div id="search-bar">
+        <input type="search" id="search-input" placeholder="Search&#x2026; (/)" autocomplete="off" />
+      </div>
+      <ul id="item-list" role="listbox"></ul>
+      <div id="load-more-sentinel"></div>
+      <div id="item-list-empty" hidden>No items</div>
+    </div>
+
+    <!-- ── Right: Article detail ─────────────────────────────── -->
+    <div id="item-detail">
+      <div id="item-detail-empty">
+        <span>Select an article</span>
+        <span class="hint">j / k to navigate</span>
+      </div>
+      <div id="item-detail-content" hidden>
+        <div id="detail-toolbar">
+          <button id="btn-back-list"   class="icon-btn" title="Back to list (q)">&#x2190;</button>
+          <button id="btn-star"        title="Star (s)">&#x2606;</button>
+          <button id="btn-toggle-read" title="Toggle read (r)">&#x25cb;</button>
+          <button id="btn-readability" title="Readability mode (i)">Aa</button>
+          <a      id="btn-open"        target="_blank" rel="noopener noreferrer" title="Open in browser (o)">&#x2197;</a>
+          <span   id="toolbar-spacer"></span>
+          <button id="btn-prev-item"   title="Previous (k)">&#x2191;</button>
+          <button id="btn-next-item"   title="Next (j)">&#x2193;</button>
+        </div>
+        <div id="detail-header">
+          <h1 id="detail-title"></h1>
+          <div id="detail-meta"></div>
+        </div>
+        <div id="detail-body"></div>
+      </div>
+    </div>
+
+  </div><!-- #app -->
+
+  <!-- ── Add-feed modal ───────────────────────────────────────── -->
+  <dialog id="modal-add-feed">
+    <article>
+      <header>
+        <button data-close-modal aria-label="Close">&times;</button>
+        <h3>Add Feed</h3>
+      </header>
+      <form id="form-add-feed" autocomplete="off">
+        <input type="text" id="input-feed-url" placeholder="Feed URL or site URL" required />
+        <div id="feed-candidates" hidden></div>
+        <div id="feed-add-footer">
+          <button type="button" class="secondary" data-close-modal>Cancel</button>
+          <button type="submit" id="btn-feed-submit">Find</button>
+        </div>
+      </form>
+    </article>
+  </dialog>
+
+  <!-- ── Edit feed/folder modal ───────────────────────────────── -->
+  <dialog id="modal-manage">
+    <article>
+      <header>
+        <button data-close-modal aria-label="Close">&times;</button>
+        <h3 id="modal-manage-title"></h3>
+      </header>
+      <div id="modal-manage-body"></div>
+    </article>
+  </dialog>
+
+  <!-- ── Settings modal ───────────────────────────────────────── -->
+  <dialog id="modal-settings">
+    <article>
+      <header>
+        <button data-close-modal aria-label="Close">&times;</button>
+        <h3>Settings</h3>
+      </header>
+      <form id="form-settings">
+        <label>Theme
+          <select name="theme">
+            <option value="auto">Auto (system)</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+        <label>Font size
+          <select name="font_size">
+            <option value="small">Small</option>
+            <option value="medium" selected>Medium</option>
+            <option value="large">Large</option>
+          </select>
+        </label>
+        <label>Auto-refresh interval (minutes, 0&nbsp;=&nbsp;off)
+          <input type="number" name="refresh_rate" min="0" max="1440" placeholder="30" />
+        </label>
+        <button type="submit">Save</button>
+      </form>
+      <hr />
+      <div id="opml-section">
+        <strong>OPML</strong>
+        <div id="opml-actions">
+          <button id="btn-opml-import" class="outline">Import</button>
+          <button id="btn-opml-export" class="outline">Export</button>
+        </div>
+        <input type="file" id="input-opml-file" accept=".opml,.xml" hidden />
+      </div>
+    </article>
+  </dialog>
+
+  <script src="/javascripts/api.js"></script>
+  <script src="/javascripts/key.js"></script>
+  <script src="/javascripts/app.js"></script>
+</body>
+</html>

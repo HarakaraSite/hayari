@@ -1,0 +1,8 @@
+yarr2
+yarr2-gui
+*.db
+*.db-shm
+*.db-wal
+*.exe
+.DS_Store
+.claude/settings.local.json
