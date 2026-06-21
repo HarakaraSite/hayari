@@ -176,7 +176,7 @@ func (s *Storage) CreateItems(items []Item) error {
 	}
 	defer insertItem.Close()
 
-	insertSearch, err := tx.Prepare(`INSERT OR IGNORE INTO search(rowid, title, body) VALUES (?, ?, ?)`)
+	insertSearch, err := tx.Prepare(`INSERT INTO search(rowid, title, body) VALUES (?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -246,9 +246,8 @@ type FeedUnreadStat struct {
 
 // GetUnreadCountsByFeed returns unread count and newest unread item date per feed in a single query.
 func (s *Storage) GetUnreadCountsByFeed() ([]FeedUnreadStat, error) {
-	// Use strftime to get unix seconds — avoids time.Time scanning issues with aggregate MAX().
 	rows, err := s.db.Query(`
-		SELECT feed_id, COUNT(*), CAST(strftime('%s', MAX(date)) AS INTEGER)
+		SELECT feed_id, COUNT(*), MAX(date)
 		FROM items
 		WHERE status = 'unread'
 		GROUP BY feed_id`)
@@ -259,18 +258,37 @@ func (s *Storage) GetUnreadCountsByFeed() ([]FeedUnreadStat, error) {
 
 	var stats []FeedUnreadStat
 	for rows.Next() {
-		var feedID, count, unixSec int64
-		if err := rows.Scan(&feedID, &count, &unixSec); err != nil {
+		var feedID, count int64
+		var dateStr string
+		if err := rows.Scan(&feedID, &count, &dateStr); err != nil {
 			return nil, err
 		}
-		st := FeedUnreadStat{
+		stats = append(stats, FeedUnreadStat{
 			FeedID:     feedID,
 			Count:      count,
-			NewestDate: time.Unix(unixSec, 0),
-		}
-		stats = append(stats, st)
+			NewestDate: parseDate(dateStr),
+		})
 	}
 	return stats, rows.Err()
+}
+
+// parseDate parses a date string stored by the SQLite driver.
+// Both go-sqlite3 and modernc.org/sqlite use RFC3339Nano.
+var dateFormats = []string{
+	time.RFC3339Nano,
+	time.RFC3339,
+	"2006-01-02 15:04:05.999999999",
+	"2006-01-02 15:04:05",
+	"2006-01-02",
+}
+
+func parseDate(s string) time.Time {
+	for _, layout := range dateFormats {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
 }
 
 // DeleteOldItems removes items older than 90 days per feed, keeping:

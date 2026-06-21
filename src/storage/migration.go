@@ -55,14 +55,20 @@ var migrations = []string{
 	`ALTER TABLE feeds ADD COLUMN last_error TEXT`,
 	// 9: 日時インデックス（ソート性能）
 	`CREATE INDEX IF NOT EXISTS idx_items_date ON items(date)`,
-	// 10: FTS4 全文検索テーブル（go-sqlite3 デフォルトで有効）
-	`CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts4(title, body)`,
-	// 11: 既存アイテムをバックフィル（HTML タグ込みで可）
+	// 10: FTS 全文検索テーブル（新規インストールは fts5 で作成）
+	`CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(title, body)`,
+	// 11: 既存アイテムをバックフィル
 	`INSERT OR IGNORE INTO search(rowid, title, body) SELECT id, title, content FROM items`,
 	// 12: starred を独立 BOOLEAN カラムに分離
 	`ALTER TABLE items ADD COLUMN starred BOOLEAN NOT NULL DEFAULT 0`,
 	// 13: status='starred' の行を starred=1, status='read' に変換
 	`UPDATE items SET starred = 1, status = 'read' WHERE status = 'starred'`,
+	// 14: fts4 → fts5 移行: 旧テーブルを削除（fts4 で作成済みの既存 DB 向け）
+	`DROP TABLE IF EXISTS search`,
+	// 15: fts5 テーブルを再作成
+	`CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(title, body)`,
+	// 16: items から再バックフィル
+	`INSERT INTO search(rowid, title, body) SELECT id, title, content FROM items`,
 }
 
 func (s *Storage) migrate() error {
