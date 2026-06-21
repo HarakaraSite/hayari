@@ -346,11 +346,11 @@ func TestDeleteOldItemsKeepsStarred(t *testing.T) {
 
 	feed, _ := s.CreateFeed("https://example.com/feed", nil)
 
-	// Insert 1 starred old item
+	// Insert 1 old starred item using the new schema (starred column)
 	tx, _ := s.db.Begin()
 	oldDate := time.Now().AddDate(0, 0, -100).Format("2006-01-02 15:04:05")
-	tx.Exec(`INSERT INTO items (feed_id, guid, title, link, date, content, author, status)
-		VALUES (?, 'starred-old', 'Starred Old', 'https://x.com', ?, '', '', 'starred')`,
+	tx.Exec(`INSERT INTO items (feed_id, guid, title, link, date, content, author, status, starred)
+		VALUES (?, 'starred-old', 'Starred Old', 'https://x.com', ?, '', '', 'read', 1)`,
 		feed.ID, oldDate)
 	tx.Commit()
 
@@ -362,7 +362,48 @@ func TestDeleteOldItemsKeepsStarred(t *testing.T) {
 	if len(items) != 1 {
 		t.Errorf("starred item should not be deleted, got %d items", len(items))
 	}
+	if !items[0].Starred {
+		t.Error("item.Starred should be true")
+	}
 }
+
+func TestSetStarred(t *testing.T) {
+	s := newTestDB(t)
+
+	feed, _ := s.CreateFeed("https://example.com/feed", nil)
+	s.CreateItems([]Item{makeItem(feed.ID, "g1", "A", "")})
+
+	items, _ := s.ListItems(ItemFilter{}, 10, 0)
+	id := items[0].ID
+
+	if err := s.SetStarred(id, true); err != nil {
+		t.Fatal(err)
+	}
+	item, _ := s.GetItem(id)
+	if !item.Starred {
+		t.Error("item should be starred")
+	}
+	// Status should be unchanged
+	if item.Status != "unread" {
+		t.Errorf("status = %q, want %q", item.Status, "unread")
+	}
+
+	// Filter by starred
+	starred, _ := s.ListItems(ItemFilter{Starred: boolPtr(true)}, 10, 0)
+	if len(starred) != 1 {
+		t.Errorf("starred filter count = %d, want 1", len(starred))
+	}
+
+	if err := s.SetStarred(id, false); err != nil {
+		t.Fatal(err)
+	}
+	item, _ = s.GetItem(id)
+	if item.Starred {
+		t.Error("item should not be starred after unstar")
+	}
+}
+
+func boolPtr(v bool) *bool { return &v }
 
 // --- UpdateFeedMeta / UpdateFeedFolder / UpdateFeedIcon semantics ---
 

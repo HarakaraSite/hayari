@@ -16,11 +16,13 @@ type Item struct {
 	Content string    `json:"content"`
 	Author  string    `json:"author"`
 	Status  string    `json:"status"`
+	Starred bool      `json:"starred"`
 	Image   *string   `json:"image"`
 }
 
 type ItemFilter struct {
 	Status      string
+	Starred     *bool
 	FeedID      *int64
 	FolderID    *int64
 	Search      string
@@ -37,6 +39,13 @@ func (f ItemFilter) where() (string, []interface{}) {
 	if f.Status != "" {
 		clauses = append(clauses, "i.status = ?")
 		args = append(args, f.Status)
+	}
+	if f.Starred != nil {
+		if *f.Starred {
+			clauses = append(clauses, "i.starred = 1")
+		} else {
+			clauses = append(clauses, "i.starred = 0")
+		}
 	}
 	if f.FeedID != nil {
 		clauses = append(clauses, "i.feed_id = ?")
@@ -62,7 +71,7 @@ func (f ItemFilter) where() (string, []interface{}) {
 }
 
 const itemSelect = `
-	SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.date, i.content, i.author, i.status, i.image
+	SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.date, i.content, i.author, i.status, i.starred, i.image
 	FROM items i
 	JOIN feeds f ON f.id = i.feed_id`
 
@@ -103,7 +112,7 @@ func (s *Storage) ListItems(filter ItemFilter, limit, offset int) ([]Item, error
 	for rows.Next() {
 		var item Item
 		if err := rows.Scan(&item.ID, &item.FeedID, &item.GUID, &item.Title, &item.Link,
-			&item.Date, &item.Content, &item.Author, &item.Status, &item.Image); err != nil {
+			&item.Date, &item.Content, &item.Author, &item.Status, &item.Starred, &item.Image); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -141,10 +150,10 @@ func (s *Storage) CountItems(filter ItemFilter) (int64, error) {
 func (s *Storage) GetItem(id int64) (*Item, error) {
 	item := &Item{}
 	err := s.db.QueryRow(`
-		SELECT id, feed_id, guid, title, link, date, content, author, status, image
+		SELECT id, feed_id, guid, title, link, date, content, author, status, starred, image
 		FROM items WHERE id = ?`, id).
 		Scan(&item.ID, &item.FeedID, &item.GUID, &item.Title, &item.Link,
-			&item.Date, &item.Content, &item.Author, &item.Status, &item.Image)
+			&item.Date, &item.Content, &item.Author, &item.Status, &item.Starred, &item.Image)
 	if err != nil {
 		return nil, err
 	}
@@ -198,6 +207,15 @@ func (s *Storage) CreateItems(items []Item) error {
 
 func (s *Storage) UpdateItemStatus(id int64, status string) error {
 	_, err := s.db.Exec("UPDATE items SET status = ? WHERE id = ?", status, id)
+	return err
+}
+
+func (s *Storage) SetStarred(id int64, starred bool) error {
+	v := 0
+	if starred {
+		v = 1
+	}
+	_, err := s.db.Exec("UPDATE items SET starred = ? WHERE id = ?", v, id)
 	return err
 }
 
@@ -261,7 +279,7 @@ func (s *Storage) GetUnreadCountsByFeed() ([]FeedUnreadStat, error) {
 func (s *Storage) DeleteOldItems() error {
 	_, err := s.db.Exec(`
 		DELETE FROM items
-		WHERE status != 'starred'
+		WHERE starred = 0
 		  AND date < datetime('now', '-90 days')
 		  AND id NOT IN (
 		      SELECT id FROM items i2

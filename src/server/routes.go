@@ -333,6 +333,7 @@ func (s *Server) handleItems(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	filter := storage.ItemFilter{
 		Status:   q.Get("status"),
+		Starred:  parseBoolPtr(q.Get("starred")),
 		FeedID:   parseIntPtr(q.Get("feed_id")),
 		FolderID: parseIntPtr(q.Get("folder_id")),
 		Search:   q.Get("search"),
@@ -376,7 +377,8 @@ func (s *Server) handleItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Status *string `json:"status"`
+		Status  *string `json:"status"`
+		Starred *bool   `json:"starred"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		httpError(w, err, 400)
@@ -384,6 +386,12 @@ func (s *Server) handleItem(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Status != nil {
 		if err := s.db.UpdateItemStatus(id, *body.Status); err != nil {
+			httpError(w, err, 500)
+			return
+		}
+	}
+	if body.Starred != nil {
+		if err := s.db.SetStarred(id, *body.Starred); err != nil {
 			httpError(w, err, 500)
 			return
 		}
@@ -583,4 +591,12 @@ func parseIntPtr(s string) *int64 {
 		return nil
 	}
 	return &n
+}
+
+func parseBoolPtr(s string) *bool {
+	if s == "" {
+		return nil
+	}
+	v := s == "true" || s == "1"
+	return &v
 }

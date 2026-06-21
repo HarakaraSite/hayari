@@ -583,11 +583,12 @@ func (s *Server) buildStreamFilter(r *http.Request, streamID string) storage.Ite
 // streamIDToFilter maps a GReader stream ID to an ItemFilter.
 func (s *Server) streamIDToFilter(streamID string) storage.ItemFilter {
 	filter := storage.ItemFilter{}
+	trueVal := true
 	switch {
 	case streamID == "" || streamID == "user/-/state/com.google/reading-list":
 		// all items — no filter
 	case streamID == "user/-/state/com.google/starred":
-		filter.Status = "starred"
+		filter.Starred = &trueVal
 	case streamID == "user/-/state/com.google/read":
 		filter.Status = "read"
 	case streamID == "user/-/state/com.google/unread",
@@ -626,7 +627,7 @@ func (s *Server) greaderEditTag(w http.ResponseWriter, r *http.Request) {
 			case "user/-/state/com.google/read":
 				s.db.UpdateItemStatus(id, "read")
 			case "user/-/state/com.google/starred":
-				s.db.UpdateItemStatus(id, "starred")
+				s.db.SetStarred(id, true)
 			case "user/-/state/com.google/kept-unread":
 				s.db.UpdateItemStatus(id, "unread")
 			}
@@ -636,8 +637,7 @@ func (s *Server) greaderEditTag(w http.ResponseWriter, r *http.Request) {
 			case "user/-/state/com.google/read":
 				s.db.UpdateItemStatus(id, "unread")
 			case "user/-/state/com.google/starred":
-				// un-star → revert to read
-				s.db.UpdateItemStatus(id, "read")
+				s.db.SetStarred(id, false)
 			}
 		}
 	}
@@ -697,7 +697,7 @@ func itemToGReaderEntry(item *storage.Item, feedMap map[int64]*storage.Feed, fol
 	if item.Status == "read" {
 		categories = append(categories, "user/-/state/com.google/read")
 	}
-	if item.Status == "starred" {
+	if item.Starred {
 		categories = append(categories, "user/-/state/com.google/starred")
 	}
 

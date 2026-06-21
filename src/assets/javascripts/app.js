@@ -308,7 +308,11 @@ const App = (() => {
 
   function buildItemParams() {
     const p = {};
-    if (state.filter !== 'all') p.status = state.filter;
+    if (state.filter === 'starred') {
+      p.starred = 'true';
+    } else if (state.filter !== 'all') {
+      p.status = state.filter;
+    }
     if (state.sourceType === 'feed')   p.feed_id   = state.sourceId;
     if (state.sourceType === 'folder') p.folder_id = state.sourceId;
     if (state.search) p.search = state.search;
@@ -325,7 +329,7 @@ const App = (() => {
       li.setAttribute('role', 'option');
       li.setAttribute('aria-selected', 'false');
       const isUnread  = item.status === 'unread';
-      const isStarred = item.status === 'starred';
+      const isStarred = !!item.starred;
       li.className = 'item-entry' +
         (isUnread  ? ' unread'  : '') +
         (isStarred ? ' starred' : '');
@@ -432,8 +436,8 @@ const App = (() => {
 
   function updateDetailToolbar(item) {
     if (!item) return;
-    btnStar.textContent       = item.status === 'starred' ? '★' : '☆';
-    btnStar.classList.toggle('active', item.status === 'starred');
+    btnStar.textContent       = item.starred ? '★' : '☆';
+    btnStar.classList.toggle('active', !!item.starred);
     btnToggleRead.textContent = item.status === 'read' ? '●' : '○';
     btnToggleRead.classList.toggle('active', item.status === 'read');
   }
@@ -441,8 +445,25 @@ const App = (() => {
   async function toggleStar() {
     const item = state.selectedItem;
     if (!item) return;
-    const newStatus = item.status === 'starred' ? 'read' : 'starred';
-    await setItemStatus(item, newStatus);
+    const newStarred = !item.starred;
+    item.starred = newStarred;
+    await API.updateItem(item.id, { starred: newStarred });
+
+    const li = itemList.querySelector(`[data-item-id="${item.id}"]`);
+    if (li) {
+      li.classList.toggle('starred', newStarred);
+      const mark = li.querySelector('.item-star-mark');
+      if (newStarred && !mark) {
+        const span = document.createElement('span');
+        span.className = 'item-star-mark';
+        span.innerHTML = '&#x2605;';
+        li.querySelector('.item-top-row').insertBefore(span, li.querySelector('.item-date'));
+      } else if (!newStarred && mark) {
+        mark.remove();
+      }
+    }
+
+    updateDetailToolbar(item);
   }
 
   async function toggleRead() {
@@ -460,8 +481,7 @@ const App = (() => {
     // Update list item CSS
     const li = itemList.querySelector(`[data-item-id="${item.id}"]`);
     if (li) {
-      li.classList.toggle('unread',  status === 'unread');
-      li.classList.toggle('starred', status === 'starred');
+      li.classList.toggle('unread', status === 'unread');
     }
 
     // Update toolbar

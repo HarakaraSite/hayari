@@ -59,6 +59,10 @@ var migrations = []string{
 	`CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts4(title, body)`,
 	// 11: 既存アイテムをバックフィル（HTML タグ込みで可）
 	`INSERT OR IGNORE INTO search(rowid, title, body) SELECT id, title, content FROM items`,
+	// 12: starred を独立 BOOLEAN カラムに分離
+	`ALTER TABLE items ADD COLUMN starred BOOLEAN NOT NULL DEFAULT 0`,
+	// 13: status='starred' の行を starred=1, status='read' に変換
+	`UPDATE items SET starred = 1, status = 'read' WHERE status = 'starred'`,
 }
 
 func (s *Storage) migrate() error {

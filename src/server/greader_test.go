@@ -579,8 +579,8 @@ func TestGreaderEditTagStar(t *testing.T) {
 	})
 
 	updated, _ := srv.db.GetItem(items[0].ID)
-	if updated.Status != "starred" {
-		t.Errorf("status = %q, want 'starred'", updated.Status)
+	if !updated.Starred {
+		t.Errorf("Starred = false, want true after starring")
 	}
 }
 
