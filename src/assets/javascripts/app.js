@@ -447,7 +447,15 @@ const App = (() => {
     if (!item) return;
     const newStarred = !item.starred;
     item.starred = newStarred;
-    await API.updateItem(item.id, { starred: newStarred });
+
+    try {
+      await API.updateItem(item.id, { starred: newStarred });
+    } catch (_) {
+      // Rollback on failure
+      item.starred = !newStarred;
+      updateDetailToolbar(item);
+      return;
+    }
 
     const li = itemList.querySelector(`[data-item-id="${item.id}"]`);
     if (li) {

@@ -57,11 +57,11 @@ func (f ItemFilter) where() (string, []interface{}) {
 	}
 	if f.After != nil {
 		clauses = append(clauses, "i.date >= ?")
-		args = append(args, *f.After)
+		args = append(args, f.After.UTC().Format(time.RFC3339Nano))
 	}
 	if f.Before != nil {
 		clauses = append(clauses, "i.date <= ?")
-		args = append(args, *f.Before)
+		args = append(args, f.Before.UTC().Format(time.RFC3339Nano))
 	}
 
 	if len(clauses) == 0 {
@@ -188,7 +188,7 @@ func (s *Storage) CreateItems(items []Item) error {
 			status = "unread"
 		}
 		res, err := insertItem.Exec(item.FeedID, item.GUID, item.Title, item.Link,
-			item.Date, item.Content, item.Author, item.Image, status)
+			item.Date.UTC().Format(time.RFC3339Nano), item.Content, item.Author, item.Image, status)
 		if err != nil {
 			return err
 		}
@@ -263,10 +263,14 @@ func (s *Storage) GetUnreadCountsByFeed() ([]FeedUnreadStat, error) {
 		if err := rows.Scan(&feedID, &count, &dateStr); err != nil {
 			return nil, err
 		}
+		newestDate, err := parseDate(dateStr)
+		if err != nil {
+			return nil, err
+		}
 		stats = append(stats, FeedUnreadStat{
 			FeedID:     feedID,
 			Count:      count,
-			NewestDate: parseDate(dateStr),
+			NewestDate: newestDate,
 		})
 	}
 	return stats, rows.Err()
@@ -282,13 +286,13 @@ var dateFormats = []string{
 	"2006-01-02",
 }
 
-func parseDate(s string) time.Time {
+func parseDate(s string) (time.Time, error) {
 	for _, layout := range dateFormats {
 		if t, err := time.Parse(layout, s); err == nil {
-			return t
+			return t, nil
 		}
 	}
-	return time.Time{}
+	return time.Time{}, fmt.Errorf("unrecognised date format: %q", s)
 }
 
 // DeleteOldItems removes items older than 90 days per feed, keeping:
