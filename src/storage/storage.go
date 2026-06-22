@@ -19,7 +19,7 @@ func Open(path string) (*Storage, error) {
 		return nil, err
 	}
 
-	db, err := sql.Open("sqlite", path+"?_journal_mode=WAL&_foreign_keys=on")
+	db, err := sql.Open("sqlite", path+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)")
 	if err != nil {
 		return nil, err
 	}

@@ -557,10 +557,14 @@ func (s *Server) buildStreamFilter(r *http.Request, streamID string) storage.Ite
 		}
 	}
 
-	// it= include tag (override status filter)
+	// it= include tag (override status/starred filter)
 	if it := r.URL.Query().Get("it"); it != "" {
-		if f := s.streamIDToFilter(it); f.Status != "" {
+		f := s.streamIDToFilter(it)
+		if f.Status != "" {
 			filter.Status = f.Status
+		}
+		if f.Starred != nil {
+			filter.Starred = f.Starred
 		}
 	}
 
