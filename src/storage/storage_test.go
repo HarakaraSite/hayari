@@ -24,6 +24,13 @@ func newTestDB(t *testing.T) *Storage {
 	return s
 }
 
+func TestStorageUsesSingleConnection(t *testing.T) {
+	s := newTestDB(t)
+	if got := s.db.Stats().MaxOpenConnections; got != 1 {
+		t.Fatalf("MaxOpenConnections = %d, want 1", got)
+	}
+}
+
 // --- Folder ---
 
 func TestFolderCRUD(t *testing.T) {

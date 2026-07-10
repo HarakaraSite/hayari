@@ -23,6 +23,11 @@ func Open(path string) (*Storage, error) {
 	if err != nil {
 		return nil, err
 	}
+	// SQLite permits only one writer at a time. Keep this process to one
+	// connection so concurrent feed refreshes and API writes are serialized
+	// instead of failing with SQLITE_BUSY.
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 
 	s := &Storage{db: db}
 	if err := s.migrate(); err != nil {

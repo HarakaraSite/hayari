@@ -37,6 +37,7 @@
 - [x] スター状態を `items.starred` に分離し、既存 `status='starred'` を移行
 - [x] `status` を read/unread の2値に統一し、ItemFilter・REST API・Web UI・GReader API を追従
 - [x] スター付き未読 item の回帰テストを追加
+- [x] SQLite 接続を 1 本に制限し、並列更新時の `SQLITE_BUSY` を防止
 
 ### Worker
 - [x] 並列フィード更新
@@ -156,10 +157,10 @@
 - [ ] 実機確認で見つかった不足フィールド・レスポンス形式を修正
 
 ### Web UI 動作確認
-- [ ] フィード追加・更新・記事閲覧のブラウザ smoke test
-- [ ] OPML import / export のブラウザ smoke test
-- [ ] Readability モードのブラウザ smoke test
-- [ ] モバイル幅・タブレット幅・デスクトップ幅で layout regression 確認
+- [x] フィード追加・更新・記事閲覧のブラウザ smoke test（2NN RSS、2026-07-10）
+- [x] OPML import / export のブラウザ smoke test（実運用 yarr の OPML、2026-07-10）
+- [x] Readability モードのブラウザ smoke test（2026-07-10）
+- [x] モバイル幅・タブレット幅・デスクトップ幅で layout regression 確認（2026-07-10）
 
 ---
 
@@ -172,8 +173,10 @@
 - [ ] `GET /api/items` の新着順/古い順切替を UI 設定と連携
 
 ### フロントエンド
+- [ ] フィード追加後、初回取得の完了を待ってサイドバー・記事一覧を自動更新する
 - [ ] パネル幅リサイズ（左カラム・中カラムをドラッグで調整）
 - [ ] フィードエラー表示 UI（`/api/feeds/errors` を使う）
+- [ ] 404 など継続取得不能なフィードの扱いを決める（UI 通知・再試行・整理手順）
 - [ ] フィルター管理 UI（一覧・追加・編集・削除）
 - [ ] フィルターのルール種別（正規表現 / 部分一致）を選択可能にする
 - [ ] item.image の表示対応を検討（使う場合は URL 安全性を維持）

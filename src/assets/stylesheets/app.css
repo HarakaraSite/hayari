@@ -81,7 +81,9 @@ body {
 
 /* Feed list */
 #feed-list {
-  list-style: none;
+	/* Override Pico's nav ul flex layout. */
+	display: block;
+	list-style: none;
   padding: 0.3rem 0;
   margin: 0;
   flex: 1;
@@ -89,7 +91,9 @@ body {
 }
 
 #feed-list li {
-  margin: 0;
+	display: block;
+	width: 100%;
+	margin: 0;
   padding: 0;
 }
 
@@ -149,7 +153,9 @@ body {
 .folder-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .folder-feeds {
-  list-style: none;
+	/* Override Pico's nav ul flex layout for nested feed lists. */
+	display: block;
+	list-style: none;
   padding: 0;
   margin: 0;
 }
