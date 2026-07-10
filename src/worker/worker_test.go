@@ -12,6 +12,14 @@ import (
 	"github.com/nkanaev/yarr2/src/storage"
 )
 
+func TestMain(m *testing.M) {
+	// Worker integration tests use httptest loopback servers. Production clients
+	// remain guarded; the guard itself is covered in safehttp package tests.
+	httpClient = &http.Client{Timeout: 30 * time.Second}
+	crawlerClient = &http.Client{Timeout: 15 * time.Second}
+	os.Exit(m.Run())
+}
+
 // --- helpers ---
 
 func newTestDB(t *testing.T) *storage.Storage {

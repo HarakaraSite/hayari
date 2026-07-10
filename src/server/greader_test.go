@@ -15,6 +15,13 @@ import (
 	"github.com/nkanaev/yarr2/src/storage"
 )
 
+func TestMain(m *testing.M) {
+	// Route integration tests use httptest loopback servers. Production uses the
+	// guarded client; direct unsafe URL rejection is tested at the handler.
+	pageClient = &http.Client{Timeout: 15 * time.Second}
+	os.Exit(m.Run())
+}
+
 // --- Test helpers ---
 
 func newTestServer(t *testing.T) (*Server, *httptest.Server) {
@@ -32,7 +39,7 @@ func newTestServer(t *testing.T) (*Server, *httptest.Server) {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	srv := New(db, "localhost:0", "", "")
+	srv := New(db, "localhost:0", "", "", "test")
 	ts := httptest.NewServer(srv.buildMux())
 	t.Cleanup(ts.Close)
 	return srv, ts
@@ -168,6 +175,32 @@ func TestGreaderLoginGET(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("GET ClientLogin status = %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestGreaderLoginRateLimited(t *testing.T) {
+	srv, ts := newTestServer(t)
+	srv.Username = "user"
+	srv.Password = "pass"
+	srv.logins = newLoginRateLimiter(2, time.Minute)
+
+	for i := 0; i < 2; i++ {
+		resp, err := http.PostForm(ts.URL+"/accounts/ClientLogin", url.Values{"Email": {"user"}, "Passwd": {"wrong"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("attempt %d status = %d, want 401", i+1, resp.StatusCode)
+		}
+	}
+	resp, err := http.PostForm(ts.URL+"/accounts/ClientLogin", url.Values{"Email": {"user"}, "Passwd": {"pass"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("locked status = %d, want 429", resp.StatusCode)
 	}
 }
 
@@ -657,4 +690,3 @@ func TestGreaderQuickAdd(t *testing.T) {
 		t.Errorf("feed count = %d, want 1", len(feeds))
 	}
 }
-

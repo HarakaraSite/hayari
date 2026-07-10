@@ -100,3 +100,37 @@ func TestCredentialsMatch(t *testing.T) {
 		t.Fatal("wrong username returned true")
 	}
 }
+
+func TestLoginRateLimiterLocksAndResets(t *testing.T) {
+	l := newLoginRateLimiter(2, time.Minute)
+	now := time.Now()
+	l.failure("127.0.0.1", now)
+	if !l.allowed("127.0.0.1", now) {
+		t.Fatal("first failure should be allowed")
+	}
+	l.failure("127.0.0.1", now)
+	if l.allowed("127.0.0.1", now) {
+		t.Fatal("second failure should lock")
+	}
+	l.success("127.0.0.1")
+	if !l.allowed("127.0.0.1", now) {
+		t.Fatal("successful login should reset attempts")
+	}
+}
+
+func TestLoginRateLimiterExpiresOldFailuresAndCapsEntries(t *testing.T) {
+	l := newLoginRateLimiter(5, time.Minute)
+	l.retention = time.Minute
+	l.capacity = 2
+	now := time.Now()
+	l.failure("one", now)
+	l.failure("two", now)
+	l.failure("three", now)
+	if len(l.attempts) != 2 {
+		t.Fatalf("attempts = %d, want capacity 2", len(l.attempts))
+	}
+	l.failure("four", now.Add(2*time.Minute))
+	if len(l.attempts) != 1 {
+		t.Fatalf("expired attempts were not pruned: %d remain", len(l.attempts))
+	}
+}

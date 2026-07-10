@@ -16,6 +16,10 @@ import (
 
 // Helpers reuse newTestServer and buildMux from greader_test.go.
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
 func doRequest(t *testing.T, ts *httptest.Server, method, path, body string) *http.Response {
 	t.Helper()
 	var bodyReader io.Reader
@@ -34,6 +38,64 @@ func doRequest(t *testing.T, ts *httptest.Server, method, path, body string) *ht
 		t.Fatal(err)
 	}
 	return resp
+}
+
+func TestHealthz(t *testing.T) {
+	_, ts := newTestServer(t)
+	resp := doRequest(t, ts, http.MethodGet, "/healthz", "")
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var body map[string]bool
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if !body["ok"] {
+		t.Errorf("response = %v, want ok=true", body)
+	}
+}
+
+func TestHTTPServerTimeouts(t *testing.T) {
+	srv, _ := newTestServer(t)
+	httpServer := srv.newHTTPServer(http.NewServeMux())
+	if httpServer.ReadHeaderTimeout != readHeaderTimeout ||
+		httpServer.ReadTimeout != readTimeout ||
+		httpServer.WriteTimeout != writeTimeout ||
+		httpServer.IdleTimeout != idleTimeout {
+		t.Fatalf("unexpected timeouts: %#v", httpServer)
+	}
+}
+
+func TestHealthzMethodNotAllowed(t *testing.T) {
+	_, ts := newTestServer(t)
+	resp := doRequest(t, ts, http.MethodPost, "/healthz", "")
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", resp.StatusCode)
+	}
+}
+
+func TestStatusUsesServerVersion(t *testing.T) {
+	srv, ts := newTestServer(t)
+	srv.Version = "v1.2.3"
+	resp := doRequest(t, ts, http.MethodGet, "/api/status", "")
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var body struct {
+		Version string `json:"version"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Version != "v1.2.3" {
+		t.Errorf("version = %q, want %q", body.Version, "v1.2.3")
+	}
 }
 
 // --- GET /api/feeds/errors ---
@@ -296,15 +358,19 @@ func TestOPMLExport(t *testing.T) {
 // --- GET /page ---
 
 func TestHandlePage(t *testing.T) {
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, "<html><body><p>Hello page</p></body></html>")
-	}))
-	defer origin.Close()
+	previousClient := pageClient
+	pageClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("<html><body><p>Hello page</p></body></html>")),
+			Header:     make(http.Header),
+		}, nil
+	})}
+	defer func() { pageClient = previousClient }()
 
 	_, ts := newTestServer(t)
 
-	resp := doRequest(t, ts, http.MethodGet, "/page?url="+origin.URL, "")
+	resp := doRequest(t, ts, http.MethodGet, "/page?url=https://example.com/article", "")
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -323,6 +389,15 @@ func TestHandlePageMissingURL(t *testing.T) {
 	_, ts := newTestServer(t)
 	resp := doRequest(t, ts, http.MethodGet, "/page", "")
 	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestHandlePageRejectsPrivateAddress(t *testing.T) {
+	_, ts := newTestServer(t)
+	resp := doRequest(t, ts, http.MethodGet, "/page?url=http://127.0.0.1:1/", "")
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", resp.StatusCode)
 	}

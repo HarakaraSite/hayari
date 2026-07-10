@@ -51,16 +51,23 @@ func (s *Server) registerGReaderRoutes(mux *http.ServeMux) {
 
 func (s *Server) greaderLogin(w http.ResponseWriter, r *http.Request) {
 	// Accept both GET and POST (some clients, e.g. older Reeder versions, send GET)
+	ip := clientIP(r)
+	if !s.logins.allowed(ip, time.Now()) {
+		http.Error(w, "too many login attempts", http.StatusTooManyRequests)
+		return
+	}
 	r.ParseForm()
 	email := r.FormValue("Email")
 	passwd := r.FormValue("Passwd")
 
 	if s.Username != "" || s.Password != "" {
 		if !credentialsMatch(email, passwd, s.Username, s.Password) {
+			s.logins.failure(ip, time.Now())
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 	}
+	s.logins.success(ip)
 
 	token := generateToken()
 	now := time.Now()
@@ -693,7 +700,6 @@ func parseOffset(s string) int {
 	}
 	return n
 }
-
 
 // itemToGReaderEntry converts a storage.Item to a GReader API entry map.
 func itemToGReaderEntry(item *storage.Item, feedMap map[int64]*storage.Feed, folderTitles map[int64]string) map[string]interface{} {

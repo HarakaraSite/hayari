@@ -210,9 +210,9 @@ GET    /fever/                 Fever API v3（yarr は Fever 互換、yarr2 は 
 
 - クッキーベース（HMAC-SHA256）
 - シングルユーザー（起動時に username/password を指定）
-- クッキー形式: `username:hmac_signature`
+- クッキー形式: `username:expiry_unix:hmac_signature`
 - タイミング攻撃対策: `subtle.ConstantTimeCompare()` 使用
-- クッキー属性: `Secure`（HTTPS のみ）, `SameSiteLaxMode`（CSRF 対策）
+- クッキー属性: `HttpOnly`, `SameSiteLaxMode`（CSRF 対策）。`Secure` は TLS 終端方針と合わせて未対応
 - 有効期限: 1 週間
 
 ---
@@ -266,7 +266,7 @@ GET    /fever/                 Fever API v3（yarr は Fever 互換、yarr2 は 
 テキスト入力中・修飾キー（Ctrl/Alt/Cmd）押下中はショートカット無効。
 
 ### 外観設定
-- テーマ: night / sepia / light
+- テーマ: auto / light / dark
 - フォント: 設定可能
 - フォントサイズ: 設定可能
 - レスポンシブ対応（モバイルではサイドバー折りたたみ）
@@ -313,25 +313,26 @@ GET    /fever/                 Fever API v3（yarr は Fever 互換、yarr2 は 
 | フロントエンド | Vue.js 3 | Vanilla JS |
 | CSS | 独自スタイル | Pico CSS |
 | RSS パーサー | 独自実装 | mmcdole/gofeed 使用 |
-| フィルター機能 | なし | 実装予定（後回し） |
+| フィルター機能 | なし | バックエンド実装済み（UI は未実装） |
 
 ---
 
-## 未実装・要検討事項（yarr2）
+## 実装状況・未実装事項（yarr2）
 
-- [ ] gofeed への移行（独自パーサーを置き換え）
-- [ ] Worker: ETag / Last-Modified 対応
-- [ ] Worker: アイテム保持ルール（90日・最低50件・スター保護）
-- [ ] Worker: favicon 自動取得
-- [ ] API: `/api/feeds/errors`
-- [ ] API: `/api/feeds/:id/icon`
-- [ ] API: `/opml/import`, `/opml/export`
-- [ ] API: `/page`（Readability 用クロール）
-- [ ] FreshRSS API: クライアントアプリとの接続検証
-- [ ] UI: Readability モード
-- [ ] UI: テーマ切替（night / sepia / light）
-- [ ] UI: OPML インポート/エクスポート UI
-- [ ] UI: 全キーボードショートカット
-- [ ] UI: 相対時刻表示
+### 実装済み
+
+- [x] gofeed への移行（独自パーサーを置き換え）
+- [x] Worker: ETag / Last-Modified、アイテム保持ルール、favicon 自動取得
+- [x] API: `/api/feeds/errors`, `/api/feeds/:id/icon`, `/opml/import`, `/opml/export`, `/page`
+- [x] FreshRSS / Google Reader API の主要エンドポイントとユニットテスト
+- [x] UI: Readability モード、テーマ切替（auto / light / dark）、OPML import/export、キーボードショートカット、相対時刻表示
+- [x] 認証: HMAC-SHA256 署名 Cookie
+
+### 未実装・要検討
+
+- [ ] FreshRSS、Reeder、NetNewsWire など実クライアントとの接続・同期検証
 - [ ] UI: パネル幅リサイズ
-- [ ] 認証: HMAC-SHA256 クッキー方式（現状はシンプルなトークン）
+- [ ] UI: フィードエラー表示とフィルター管理
+- [x] `/page`、フィード取得、favicon 取得の SSRF 対策（DNS 解決後の IP とリダイレクト先を検査）
+- [ ] HTTPS 利用時の Cookie `Secure` 属性とリバースプロキシ運用方針
+- [ ] CI、Docker、クロスコンパイル、リリース手順

@@ -10,10 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nkanaev/yarr2/src/safehttp"
 	"golang.org/x/net/html"
 )
 
-var crawlerClient = &http.Client{Timeout: 15 * time.Second}
+var crawlerClient = safehttp.NewClient(15 * time.Second)
 
 type FoundFeed struct {
 	URL   string `json:"url"`

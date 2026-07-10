@@ -4,28 +4,41 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/nkanaev/yarr2/src/storage"
 	"github.com/nkanaev/yarr2/src/worker"
+)
+
+const (
+	readHeaderTimeout = 10 * time.Second
+	readTimeout       = 30 * time.Second
+	writeTimeout      = 30 * time.Second
+	idleTimeout       = 2 * time.Minute
+	shutdownTimeout   = 10 * time.Second
 )
 
 type Server struct {
 	Addr     string
 	Username string
 	Password string
+	Version  string
 
 	authKey []byte
 	db      *storage.Storage
 	worker  *worker.Worker
 	http    *http.Server
+	logins  *loginRateLimiter
 }
 
-func New(db *storage.Storage, addr, username, password string) *Server {
+func New(db *storage.Storage, addr, username, password, version string) *Server {
 	s := &Server{
 		Addr:     addr,
 		Username: username,
 		Password: password,
+		Version:  version,
 		db:       db,
+		logins:   newLoginRateLimiter(maxLoginFailures, loginLockDuration),
 	}
 	s.worker = worker.New(db)
 	return s
@@ -44,16 +57,26 @@ func (s *Server) Start() error {
 	s.registerRoutes(mux)
 	s.registerGReaderRoutes(mux)
 
-	s.http = &http.Server{
-		Addr:    s.Addr,
-		Handler: mux,
-	}
+	s.http = s.newHTTPServer(mux)
 	return s.http.ListenAndServe()
+}
+
+func (s *Server) newHTTPServer(handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              s.Addr,
+		Handler:           handler,
+		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
+	}
 }
 
 func (s *Server) Stop() {
 	s.worker.Stop()
 	if s.http != nil {
-		s.http.Shutdown(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		s.http.Shutdown(ctx)
 	}
 }

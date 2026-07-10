@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	_ "modernc.org/sqlite"
 	"golang.org/x/net/html"
+	_ "modernc.org/sqlite"
 )
 
 type Storage struct {
@@ -34,6 +34,11 @@ func Open(path string) (*Storage, error) {
 
 func (s *Storage) Close() error {
 	return s.db.Close()
+}
+
+// Ping verifies that the database remains reachable.
+func (s *Storage) Ping() error {
+	return s.db.Ping()
 }
 
 // stripHTML extracts plain text from an HTML string for FTS indexing.

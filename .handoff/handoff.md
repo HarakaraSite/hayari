@@ -1,0 +1,6 @@
+- 2026-07-10 15:48 [codex] docs/tasks.md と docs/yarr-research.md を実装へ同期。次は v1 Phase 0（CI・healthz・version）または SSRF 対策。
+- 2026-07-10 15:56 [codex] Phase 0 完了: /healthz、/api/status の Version 貫通、GitHub Actions CI を追加。go test/vet/race は成功。次は SSRF 対策（/page・feed・favicon）。
+- 2026-07-10 16:04 [codex] SSRF 対策を実装: safehttp が public HTTP(S) のみ許可し、/page・feed・favicon・リダイレクトを保護。go test/vet/race 成功。次はログインレート制限または HTTP サーバータイムアウト。
+- 2026-07-10 16:09 [codex] Web/GReader ログインに IP 単位のレート制限を追加（5 回失敗で15分ロック、成功でリセット）。go test/vet/race 成功。次は HTTP サーバータイムアウト。
+- 2026-07-10 16:14 [codex] HTTP server に ReadHeader 10s、Read/Write 30s、Idle 2m、shutdown 10s を設定。go test/vet/race 成功。次は無認証の外部 bind 警告または Cookie Secure/セキュリティヘッダ。
+- 2026-07-10 16:24 [codex] レビュー指摘を修正: ログイン失敗 IP 記録に15分TTLと10,000件上限を追加。go test/vet/race 成功。変更一式をコミット予定。

@@ -1,6 +1,6 @@
 # yarr2 タスクリスト
 
-最終更新: 2026-06-14
+最終更新: 2026-07-10
 
 実装状況の追跡用。優先度: 🔴高 / 🟡中 / 🟢低
 
@@ -31,9 +31,12 @@
 - [x] `UpdateFeedFolder(id, folderID)` 追加（folder_id を NULL にできる）
 - [x] `UpdateFeedMeta` 追加（空フィールドのみ補完）
 - [x] `UpdateFeedIcon` 追加（icon 未設定時のみ保存）
-- [x] `search` 仮想テーブル追加（現状 FTS4）
+- [x] `search` 仮想テーブル追加（FTS5、既存 FTS4 DB の移行を含む）
 - [x] `ListItems` / `CountItems` の全文検索を FTS に切り替え
 - [x] アイテム保持ルール（90日超削除・各フィード最低50件保持・スター付き保護）
+- [x] スター状態を `items.starred` に分離し、既存 `status='starred'` を移行
+- [x] `status` を read/unread の2値に統一し、ItemFilter・REST API・Web UI・GReader API を追従
+- [x] スター付き未読 item の回帰テストを追加
 
 ### Worker
 - [x] 並列フィード更新
@@ -92,6 +95,12 @@
 - [x] `GET /api/settings` で `auth_secret` を返さない
 - [x] `PUT /api/settings` で `auth_secret` を書き換え不可
 - [x] 静的アセット（index.html 含む）を認証保護
+- [x] Web / GReader ログインの IP 単位レート制限（5 回連続失敗で 15 分ロック、成功時リセット）
+
+### 運用性
+- [x] 認証不要の `/healthz`（SQLite 接続確認）
+- [x] ビルド時の `main.Version` を `/api/status` に反映
+- [x] HTTP サーバーの Read / Write / Idle タイムアウトと graceful shutdown の上限
 
 ### フロントエンド（UI）
 - [x] 3カラムレイアウト
@@ -137,19 +146,6 @@
 
 ## 🔴 高優先
 
-### スター状態の分離
-- [ ] `items.starred BOOLEAN NOT NULL DEFAULT 0` を追加
-- [ ] 既存 `status='starred'` を `starred=1, status='read'` に移行
-- [ ] `status` を read/unread の2値として扱うように storage を更新
-- [ ] `ItemFilter` に starred 条件を追加
-- [ ] Web UI の starred 表示・star toggle・未読バッジ更新を新モデルに対応
-- [ ] GReader `edit-tag` の read/starred 操作を独立状態として扱う
-- [ ] GReader stream の `xt=` / `it=` / `categories` を新モデルに対応
-- [ ] 保持ルールのスター付き保護を `starred=1` に対応
-- [ ] 既存テストを新モデルに更新し、未読スター付き item の回帰テストを追加
-
-背景: 現状は `items.status` が `unread` / `read` / `starred` の単一カラム。未読 item にスターを付けると未読状態が失われ、スター解除で read に戻ってしまう。Reeder / NetNewsWire 等の実クライアントテスト前に直す。
-
 ### GReader 互換性の実機確認
 - [ ] Reeder でログイン・購読一覧・未読同期・既読/スター操作を確認
 - [ ] NetNewsWire でログイン・購読一覧・未読同期・既読/スター操作を確認
@@ -168,7 +164,6 @@
 
 ### ストレージ・検索
 - [ ] `feeds.icon` の保存形式を決める（現状 TEXT data URL。BLOB にするか、このまま統一するか）
-- [ ] FTS4 のままにするか FTS5 に移行するか決める
 - [ ] 検索クエリのエスケープ/構文エラー時の UX を改善
 - [ ] `newest_first` 設定を追加するか判断
 - [ ] `GET /api/items` の新着順/古い順切替を UI 設定と連携
@@ -183,12 +178,12 @@
 ### 認証・運用
 - [ ] HTTPS 利用時に Cookie `Secure` を付ける方針を決める
 - [ ] GReader トークンを再起動後も維持するか判断（現状はインメモリ）
-- [ ] `/page` の SSRF 対策を強めるか判断（プライベート IP 遮断など）
+- [x] `/page`・フィード取得・favicon 取得の SSRF 対策（private / loopback / link-local 等の拒否、リダイレクト先を含む）
 
 ### ドキュメント
 - [ ] CLAUDE.md 作成（プロジェクト構造・ビルド方法・設計方針）
-- [ ] `readme.md` の更新（現状の機能・使い方・API・制限事項）
-- [ ] `docs/yarr-research.md` の未実装リストを現状に合わせて更新
+- [ ] `README.md` の更新（現状の機能・使い方・API・制限事項）
+- [x] `docs/yarr-research.md` の未実装リストを現状に合わせて更新
 - [ ] `docs/freshrss-api.md` に実装済み/未検証の注記を追加
 
 ---
@@ -198,7 +193,7 @@
 ### ビルド・配布
 - [ ] cross-compile ターゲット追加
 - [ ] Docker イメージ作成
-- [ ] GitHub Actions CI（テスト自動化）
+- [x] GitHub Actions CI（build / `go test -race` / `go vet`。GitHub 上での初回実行は未確認）
 - [ ] リリース用 version injection 整備
 
 ### 追加機能
@@ -213,14 +208,11 @@
 ## 実装の推奨順序
 
 ```text
-1. items.starred を独立カラムに分離
-2. storage / REST API / GReader API / Web UI を starred 新モデルへ追従
-3. スター付き未読 item の回帰テスト追加
-4. Reeder / NetNewsWire 実機テスト
-5. 実機テストで見つかった GReader 互換性差分を修正
-6. Web UI smoke test とレスポンシブ確認
-7. フィードエラー表示 UI と検索 UX 改善
-8. README / CLAUDE.md / research docs 更新
-9. CI・Docker・cross compile など配布まわり
-10. フィルター管理 UI と追加機能
+1. SSRF 対策、ログインレート制限、HTTP タイムアウトなどのセキュリティ硬化
+2. Reeder / NetNewsWire 実機テストと、互換性差分の修正
+3. Web UI smoke test とレスポンシブ確認
+4. フィードエラー表示 UI と検索 UX 改善
+5. README / CLAUDE.md / FreshRSS API ドキュメントの更新
+6. Docker・cross compile・リリース整備
+7. フィルター管理 UI と追加機能
 ```

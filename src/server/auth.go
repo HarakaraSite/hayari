@@ -59,7 +59,7 @@ func verifyCookie(key []byte, value string) (username string, ok bool) {
 	if last < 0 {
 		return "", false
 	}
-	sig  := value[last+1:]
+	sig := value[last+1:]
 	rest := value[:last]
 
 	// rest = "username:expiry"
@@ -67,8 +67,8 @@ func verifyCookie(key []byte, value string) (username string, ok bool) {
 	if sep < 0 {
 		return "", false
 	}
-	expStr   := rest[sep+1:]
-	username  = rest[:sep]
+	expStr := rest[sep+1:]
+	username = rest[:sep]
 
 	// Verify expiry
 	expUnix, err := strconv.ParseInt(expStr, 10, 64)
@@ -101,16 +101,23 @@ func (s *Server) handleWebLogin(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		http.ServeFileFS(w, r, assets.FS, "login.html")
 	case http.MethodPost:
+		ip := clientIP(r)
+		if !s.logins.allowed(ip, time.Now()) {
+			http.Error(w, "too many login attempts", http.StatusTooManyRequests)
+			return
+		}
 		r.ParseForm()
 		username := r.FormValue("username")
 		password := r.FormValue("password")
 
 		if s.Username != "" || s.Password != "" {
 			if !credentialsMatch(username, password, s.Username, s.Password) {
+				s.logins.failure(ip, time.Now())
 				http.Redirect(w, r, "/login?error=1", http.StatusSeeOther)
 				return
 			}
 		}
+		s.logins.success(ip)
 
 		cookieVal := signCookie(s.authKey, username)
 		http.SetCookie(w, &http.Cookie{

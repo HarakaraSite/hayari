@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nkanaev/yarr2/src/assets"
 	"github.com/nkanaev/yarr2/src/content"
+	"github.com/nkanaev/yarr2/src/safehttp"
 	"github.com/nkanaev/yarr2/src/storage"
 	"github.com/nkanaev/yarr2/src/worker"
 )
@@ -33,6 +35,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	}))
 	mux.HandleFunc("/login", s.handleWebLogin)
 	mux.HandleFunc("/logout", s.handleLogout)
+	mux.HandleFunc("/healthz", s.handleHealthz)
 
 	mux.HandleFunc("/api/status", auth(s.handleStatus))
 
@@ -70,11 +73,27 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/page", auth(s.handlePage))
 }
 
+var pageClient = safehttp.NewClient(15 * time.Second)
+
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]interface{}{
 		"running": s.worker.Running(),
-		"version": "dev",
+		"version": s.Version,
 	})
+}
+
+// handleHealthz reports whether the process can reach its SQLite database.
+// It intentionally stays unauthenticated so it can be used by liveness probes.
+func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := s.db.Ping(); err != nil {
+		http.Error(w, "database unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
 }
 
 // --- Folders ---
@@ -553,8 +572,12 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Get(pageURL)
+	target, err := url.Parse(pageURL)
+	if err != nil || safehttp.ValidateURL(target) != nil {
+		http.Error(w, "unsafe URL", http.StatusBadRequest)
+		return
+	}
+	resp, err := pageClient.Get(pageURL)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return

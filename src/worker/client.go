@@ -5,11 +5,11 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/nkanaev/yarr2/src/safehttp"
 )
 
-var httpClient = &http.Client{
-	Timeout: 30 * time.Second,
-}
+var httpClient = safehttp.NewClient(30 * time.Second)
 
 type FetchResult struct {
 	Data         []byte
