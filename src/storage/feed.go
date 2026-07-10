@@ -145,6 +145,16 @@ func (s *Storage) ListFeedErrors() (map[int64]string, error) {
 }
 
 func (s *Storage) DeleteFeed(id int64) error {
-	_, err := s.db.Exec("DELETE FROM feeds WHERE id = ?", id)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec("DELETE FROM search WHERE rowid IN (SELECT id FROM items WHERE feed_id = ?)", id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM feeds WHERE id = ?", id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

@@ -2,12 +2,12 @@ package server
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/nkanaev/yarr2/src/storage"
@@ -16,11 +16,6 @@ import (
 // In-memory token store (token -> expiry). Tokens are lost on restart;
 // GReader clients re-login on 401, so this only costs one extra round-trip.
 const greaderTokenTTL = 30 * 24 * time.Hour
-
-var (
-	tokenMu sync.RWMutex
-	tokens  = make(map[string]time.Time)
-)
 
 func generateToken() string {
 	b := make([]byte, 16)
@@ -71,15 +66,15 @@ func (s *Server) greaderLogin(w http.ResponseWriter, r *http.Request) {
 
 	token := generateToken()
 	now := time.Now()
-	tokenMu.Lock()
+	s.tokenMu.Lock()
 	// Prune expired tokens so the map cannot grow unboundedly
-	for t, exp := range tokens {
+	for t, exp := range s.tokens {
 		if now.After(exp) {
-			delete(tokens, t)
+			delete(s.tokens, t)
 		}
 	}
-	tokens[token] = now.Add(greaderTokenTTL)
-	tokenMu.Unlock()
+	s.tokens[token] = now.Add(greaderTokenTTL)
+	s.tokenMu.Unlock()
 
 	w.Header().Set("Content-Type", "text/plain")
 	fmt.Fprintf(w, "SID=%s\nLSID=%s\nAuth=%s\n", token, token, token)
@@ -94,9 +89,9 @@ func (s *Server) greaderAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		token := strings.TrimPrefix(auth, "GoogleLogin auth=")
-		tokenMu.RLock()
-		expiry, ok := tokens[token]
-		tokenMu.RUnlock()
+		s.tokenMu.RLock()
+		expiry, ok := s.tokens[token]
+		s.tokenMu.RUnlock()
 		if !ok || time.Now().After(expiry) {
 			w.Header().Set("Google-Bad-Token", "true")
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -440,6 +435,10 @@ func (s *Server) greaderStreamContents(w http.ResponseWriter, r *http.Request) {
 func (s *Server) greaderStreamItemIDs(w http.ResponseWriter, r *http.Request) {
 	streamID := r.URL.Query().Get("s")
 	filter := s.buildStreamFilter(r, streamID)
+	if err := applyContinuation(&filter, r.URL.Query().Get("c")); err != nil {
+		http.Error(w, "invalid continuation", http.StatusBadRequest)
+		return
+	}
 
 	n := 1000
 	if ns := r.URL.Query().Get("n"); ns != "" {
@@ -447,9 +446,7 @@ func (s *Server) greaderStreamItemIDs(w http.ResponseWriter, r *http.Request) {
 			n = parsed
 		}
 	}
-	offset := parseOffset(r.URL.Query().Get("c"))
-
-	items, err := s.db.ListItems(filter, n+1, offset)
+	items, err := s.db.ListItems(filter, n+1, 0)
 	if err != nil {
 		httpError(w, err, 500)
 		return
@@ -468,7 +465,7 @@ func (s *Server) greaderStreamItemIDs(w http.ResponseWriter, r *http.Request) {
 
 	resp := map[string]interface{}{"itemRefs": refs}
 	if len(items) > n {
-		resp["continuation"] = strconv.Itoa(offset + n)
+		resp["continuation"] = encodeContinuation(items[n-1])
 	}
 	writeJSON(w, resp)
 }
@@ -500,6 +497,10 @@ func (s *Server) greaderStreamItemContents(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) serveStreamItems(w http.ResponseWriter, r *http.Request, streamID string) {
 	filter := s.buildStreamFilter(r, streamID)
+	if err := applyContinuation(&filter, r.URL.Query().Get("c")); err != nil {
+		http.Error(w, "invalid continuation", http.StatusBadRequest)
+		return
+	}
 
 	n := 20
 	if ns := r.URL.Query().Get("n"); ns != "" {
@@ -507,10 +508,8 @@ func (s *Server) serveStreamItems(w http.ResponseWriter, r *http.Request, stream
 			n = parsed
 		}
 	}
-	offset := parseOffset(r.URL.Query().Get("c"))
-
 	// Fetch one extra to detect if there are more pages
-	items, err := s.db.ListItems(filter, n+1, offset)
+	items, err := s.db.ListItems(filter, n+1, 0)
 	if err != nil {
 		httpError(w, err, 500)
 		return
@@ -531,7 +530,7 @@ func (s *Server) serveStreamItems(w http.ResponseWriter, r *http.Request, stream
 		"items": entries,
 	}
 	if len(items) > n {
-		resp["continuation"] = strconv.Itoa(offset + n)
+		resp["continuation"] = encodeContinuation(items[n-1])
 	}
 	writeJSON(w, resp)
 }
@@ -690,15 +689,33 @@ func parseItemID(raw string) (int64, error) {
 	return strconv.ParseInt(raw, 16, 64)
 }
 
-func parseOffset(s string) int {
-	if s == "" {
-		return 0
+func encodeContinuation(item storage.Item) string {
+	payload := item.Date.UTC().Format(time.RFC3339Nano) + "|" + strconv.FormatInt(item.ID, 10)
+	return base64.RawURLEncoding.EncodeToString([]byte(payload))
+}
+
+func applyContinuation(filter *storage.ItemFilter, value string) error {
+	if value == "" {
+		return nil
 	}
-	n, err := strconv.Atoi(s)
-	if err != nil || n < 0 {
-		return 0
+	payload, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		return err
 	}
-	return n
+	parts := strings.Split(string(payload), "|")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid continuation")
+	}
+	date, err := time.Parse(time.RFC3339Nano, parts[0])
+	if err != nil {
+		return err
+	}
+	id, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil || id < 1 {
+		return fmt.Errorf("invalid continuation")
+	}
+	filter.Cursor = &storage.ItemCursor{Date: date, ID: id}
+	return nil
 }
 
 // itemToGReaderEntry converts a storage.Item to a GReader API entry map.

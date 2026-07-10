@@ -220,6 +220,18 @@ func TestGreaderUnauthorized(t *testing.T) {
 	}
 }
 
+func TestGreaderTokensAreScopedToServer(t *testing.T) {
+	_, first := newTestServer(t)
+	_, second := newTestServer(t)
+	token := login(t, first)
+
+	resp := grGet(t, second, token, "/reader/api/0/user-info")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", resp.StatusCode)
+	}
+}
+
 func TestGreaderUserInfo(t *testing.T) {
 	_, ts := newTestServer(t)
 	token := login(t, ts)
@@ -522,6 +534,48 @@ func TestGreaderStreamContentsPagination(t *testing.T) {
 	for _, item := range page2.Items {
 		if ids1[item["id"].(string)] {
 			t.Error("duplicate item across pages")
+		}
+	}
+}
+
+func TestGreaderContinuationSurvivesReadStateChanges(t *testing.T) {
+	srv, ts := newTestServer(t)
+	token := login(t, ts)
+	feed := seedFeed(t, srv.db, "https://example.com/feed.xml", "")
+	seedItems(t, srv.db, feed.ID, 5)
+
+	resp := grGet(t, ts, token, "/reader/api/0/stream/contents/user/-/state/com.google/unread?n=2")
+	var first struct {
+		Items        []map[string]interface{} `json:"items"`
+		Continuation string                   `json:"continuation"`
+	}
+	decodeJSON(t, resp, &first)
+	if len(first.Items) != 2 || first.Continuation == "" {
+		t.Fatalf("first page has %d items and continuation %q", len(first.Items), first.Continuation)
+	}
+	for _, entry := range first.Items {
+		id, err := parseItemID(entry["id"].(string))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := srv.db.UpdateItemStatus(id, "read"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	resp = grGet(t, ts, token, "/reader/api/0/stream/contents/user/-/state/com.google/unread?n=2&c="+first.Continuation)
+	var second struct {
+		Items []map[string]interface{} `json:"items"`
+	}
+	decodeJSON(t, resp, &second)
+	if len(second.Items) != 2 {
+		t.Fatalf("second page items = %d, want 2", len(second.Items))
+	}
+	for _, entry := range second.Items {
+		for _, prior := range first.Items {
+			if entry["id"] == prior["id"] {
+				t.Fatal("continuation repeated an item from the previous page")
+			}
 		}
 	}
 }

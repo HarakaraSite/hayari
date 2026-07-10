@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
@@ -132,5 +134,19 @@ func TestLoginRateLimiterExpiresOldFailuresAndCapsEntries(t *testing.T) {
 	l.failure("four", now.Add(2*time.Minute))
 	if len(l.attempts) != 1 {
 		t.Fatalf("expired attempts were not pruned: %d remain", len(l.attempts))
+	}
+}
+
+func TestAuthMiddlewareRejectsCookieForDifferentUser(t *testing.T) {
+	key := testKey(t)
+	s := &Server{Username: "alice", Password: "pass", authKey: key}
+	handler := s.authMiddleware(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+
+	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: signCookie(key, "bob")})
+	resp := httptest.NewRecorder()
+	handler(resp, req)
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", resp.Code)
 	}
 }

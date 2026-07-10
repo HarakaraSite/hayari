@@ -146,6 +146,27 @@ func TestFeedCRUD(t *testing.T) {
 	}
 }
 
+func TestDeleteFeedRemovesFTSRows(t *testing.T) {
+	s := newTestDB(t)
+	feed, err := s.CreateFeed("https://example.com/feed.xml", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateItems([]Item{{FeedID: feed.ID, GUID: "item", Title: "Searchable", Date: time.Now()}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteFeed(feed.ID); err != nil {
+		t.Fatal(err)
+	}
+	var rows int
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM search").Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Fatalf("FTS rows = %d, want 0", rows)
+	}
+}
+
 func TestListFeedErrors(t *testing.T) {
 	s := newTestDB(t)
 
@@ -240,6 +261,24 @@ func TestItemCRUD(t *testing.T) {
 	}
 }
 
+func TestUpdateItemStatusRejectsInvalidValue(t *testing.T) {
+	s := newTestDB(t)
+	f, err := s.CreateFeed("https://example.com/feed.xml", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateItems([]Item{{FeedID: f.ID, GUID: "item", Date: time.Now()}}); err != nil {
+		t.Fatal(err)
+	}
+	items, err := s.ListItems(ItemFilter{}, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateItemStatus(items[0].ID, "starred"); err == nil {
+		t.Fatal("invalid status was accepted")
+	}
+}
+
 func TestItemFTSSearch(t *testing.T) {
 	s := newTestDB(t)
 
@@ -321,6 +360,9 @@ func TestDeleteOldItems(t *testing.T) {
 			feed.ID, fmt.Sprintf("old-%d", i), fmt.Sprintf("Old %d", i), "https://x.com", oldDate)
 	}
 	tx.Commit()
+	if _, err := s.db.Exec("INSERT INTO search(rowid, title, body) SELECT id, title, content FROM items WHERE guid LIKE 'old-%'"); err != nil {
+		t.Fatal(err)
+	}
 
 	total, _ := s.CountItems(ItemFilter{})
 	if total != 65 {
@@ -338,6 +380,13 @@ func TestDeleteOldItems(t *testing.T) {
 	after, _ := s.CountItems(ItemFilter{})
 	if after != 60 {
 		t.Errorf("after delete total = %d, want 60", after)
+	}
+	var searchRows int
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM search").Scan(&searchRows); err != nil {
+		t.Fatal(err)
+	}
+	if int64(searchRows) != after {
+		t.Errorf("FTS rows = %d, want %d", searchRows, after)
 	}
 }
 

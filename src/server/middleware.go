@@ -14,7 +14,7 @@ func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 		// Check HMAC-signed session cookie
 		if cookie, err := r.Cookie(sessionCookieName); err == nil {
-			if _, ok := verifyCookie(s.authKey, cookie.Value); ok {
+			if username, ok := verifyCookie(s.authKey, cookie.Value); ok && username == s.Username {
 				next(w, r)
 				return
 			}

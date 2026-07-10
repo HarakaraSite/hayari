@@ -29,6 +29,13 @@ type ItemFilter struct {
 	After       *time.Time // i.date >= After  (GReader ot= param: items after this time)
 	Before      *time.Time // i.date <= Before (GReader mark-all-as-read ts= param)
 	OldestFirst bool       // ORDER BY date ASC; default is DESC (newest first)
+	Cursor      *ItemCursor
+}
+
+// ItemCursor identifies the final item from the previous page.
+type ItemCursor struct {
+	Date time.Time
+	ID   int64
 }
 
 // where builds the WHERE clause for non-search filters.
@@ -62,6 +69,15 @@ func (f ItemFilter) where() (string, []interface{}) {
 	if f.Before != nil {
 		clauses = append(clauses, "i.date <= ?")
 		args = append(args, f.Before.UTC().Format(time.RFC3339Nano))
+	}
+	if f.Cursor != nil {
+		date := f.Cursor.Date.UTC().Format(time.RFC3339Nano)
+		if f.OldestFirst {
+			clauses = append(clauses, "(i.date > ? OR (i.date = ? AND i.id > ?))")
+		} else {
+			clauses = append(clauses, "(i.date < ? OR (i.date = ? AND i.id < ?))")
+		}
+		args = append(args, date, date, f.Cursor.ID)
 	}
 
 	if len(clauses) == 0 {
@@ -206,6 +222,9 @@ func (s *Storage) CreateItems(items []Item) error {
 }
 
 func (s *Storage) UpdateItemStatus(id int64, status string) error {
+	if status != "read" && status != "unread" {
+		return fmt.Errorf("invalid item status: %q", status)
+	}
 	_, err := s.db.Exec("UPDATE items SET status = ? WHERE id = ?", status, id)
 	return err
 }
@@ -299,8 +318,7 @@ func parseDate(s string) (time.Time, error) {
 // - all starred items
 // - at least 50 most recent items per feed
 func (s *Storage) DeleteOldItems() error {
-	_, err := s.db.Exec(`
-		DELETE FROM items
+	const oldItemIDs = `SELECT id FROM items
 		WHERE starred = 0
 		  AND date < datetime('now', '-90 days')
 		  AND id NOT IN (
@@ -308,6 +326,17 @@ func (s *Storage) DeleteOldItems() error {
 		      WHERE i2.feed_id = items.feed_id
 		      ORDER BY i2.date DESC
 		      LIMIT 50
-		  )`)
-	return err
+		  )`
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec("DELETE FROM search WHERE rowid IN (" + oldItemIDs + ")"); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM items WHERE id IN (" + oldItemIDs + ")"); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

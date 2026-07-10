@@ -404,6 +404,10 @@ func (s *Server) handleItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.Status != nil {
+		if *body.Status != "read" && *body.Status != "unread" {
+			http.Error(w, "invalid status", http.StatusBadRequest)
+			return
+		}
 		if err := s.db.UpdateItemStatus(id, *body.Status); err != nil {
 			httpError(w, err, 500)
 			return

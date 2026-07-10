@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/nkanaev/yarr2/src/storage"
@@ -29,6 +30,8 @@ type Server struct {
 	worker  *worker.Worker
 	http    *http.Server
 	logins  *loginRateLimiter
+	tokenMu sync.RWMutex
+	tokens  map[string]time.Time
 }
 
 func New(db *storage.Storage, addr, username, password, version string) *Server {
@@ -39,6 +42,7 @@ func New(db *storage.Storage, addr, username, password, version string) *Server 
 		Version:  version,
 		db:       db,
 		logins:   newLoginRateLimiter(maxLoginFailures, loginLockDuration),
+		tokens:   make(map[string]time.Time),
 	}
 	s.worker = worker.New(db)
 	return s
