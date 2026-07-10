@@ -5,3 +5,4 @@
 - 2026-07-10 16:14 [codex] HTTP server に ReadHeader 10s、Read/Write 30s、Idle 2m、shutdown 10s を設定。go test/vet/race 成功。次は無認証の外部 bind 警告または Cookie Secure/セキュリティヘッダ。
 - 2026-07-10 16:24 [codex] レビュー指摘を修正: ログイン失敗 IP 記録に15分TTLと10,000件上限を追加。go test/vet/race 成功。変更一式をコミット予定。
 - 2026-07-10 18:50 [codex] 全体レビューの5件を修正: keyset continuation、Server単位token、Cookie username照合、status制約、FTS削除同期。go test/vet/race 成功。コミット後にセキュリティ全体レビュー予定。
+- 2026-07-10 19:01 [codex] 実用的セキュリティレビューの残件を修正: 無認証外部bind拒否、Secure Cookie opt-in、feed 5MiB上限、GReader POST既定。go test/vet/race 成功。コミット予定。

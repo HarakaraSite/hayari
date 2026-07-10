@@ -165,7 +165,8 @@ func TestGreaderLogin(t *testing.T) {
 }
 
 func TestGreaderLoginGET(t *testing.T) {
-	_, ts := newTestServer(t)
+	srv, ts := newTestServer(t)
+	srv.AllowGReaderLoginGET = true
 
 	// Some clients send GET
 	resp, err := http.Get(ts.URL + "/accounts/ClientLogin?Email=user&Passwd=pass")
@@ -175,6 +176,18 @@ func TestGreaderLoginGET(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("GET ClientLogin status = %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestGreaderLoginGETDisabledByDefault(t *testing.T) {
+	_, ts := newTestServer(t)
+	resp, err := http.Get(ts.URL + "/accounts/ClientLogin?Email=user&Passwd=pass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("GET ClientLogin status = %d, want 405", resp.StatusCode)
 	}
 }
 

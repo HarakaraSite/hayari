@@ -127,6 +127,7 @@ func (s *Server) handleWebLogin(w http.ResponseWriter, r *http.Request) {
 			Expires:  time.Now().Add(sessionDuration),
 			HttpOnly: true,
 			SameSite: http.SameSiteLaxMode,
+			Secure:   s.SecureCookie,
 		})
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	default:

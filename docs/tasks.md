@@ -96,6 +96,9 @@
 - [x] `PUT /api/settings` で `auth_secret` を書き換え不可
 - [x] 静的アセット（index.html 含む）を認証保護
 - [x] Web / GReader ログインの IP 単位レート制限（5 回連続失敗で 15 分ロック、成功時リセット）
+- [x] 無認証の non-loopback bind を既定で拒否（明示的な insecure opt-in を除く）
+- [x] HTTPS プロキシ向け Secure Cookie opt-in
+- [x] フィード取得の 5 MiB サイズ上限
 
 ### 運用性
 - [x] 認証不要の `/healthz`（SQLite 接続確認）

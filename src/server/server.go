@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -20,10 +21,13 @@ const (
 )
 
 type Server struct {
-	Addr     string
-	Username string
-	Password string
-	Version  string
+	Addr                 string
+	Username             string
+	Password             string
+	Version              string
+	AllowGReaderLoginGET bool
+	AllowInsecureNoAuth  bool
+	SecureCookie         bool
 
 	authKey []byte
 	db      *storage.Storage
@@ -49,6 +53,9 @@ func New(db *storage.Storage, addr, username, password, version string) *Server 
 }
 
 func (s *Server) Start() error {
+	if s.Username == "" && s.Password == "" && !s.AllowInsecureNoAuth && !isLoopbackAddress(s.Addr) {
+		return fmt.Errorf("refusing unauthenticated non-loopback listener %q; configure --user/--pass or explicitly allow insecure access", s.Addr)
+	}
 	key, err := loadOrCreateAuthKey(s.db.GetSetting, s.db.SetSetting)
 	if err != nil {
 		return fmt.Errorf("auth key: %w", err)
@@ -63,6 +70,18 @@ func (s *Server) Start() error {
 
 	s.http = s.newHTTPServer(mux)
 	return s.http.ListenAndServe()
+}
+
+func isLoopbackAddress(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (s *Server) newHTTPServer(handler http.Handler) *http.Server {

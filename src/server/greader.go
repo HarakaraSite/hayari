@@ -45,7 +45,10 @@ func (s *Server) registerGReaderRoutes(mux *http.ServeMux) {
 // --- Auth ---
 
 func (s *Server) greaderLogin(w http.ResponseWriter, r *http.Request) {
-	// Accept both GET and POST (some clients, e.g. older Reeder versions, send GET)
+	if r.Method != http.MethodPost && !(r.Method == http.MethodGet && s.AllowGReaderLoginGET) {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	ip := clientIP(r)
 	if !s.logins.allowed(ip, time.Now()) {
 		http.Error(w, "too many login attempts", http.StatusTooManyRequests)

@@ -11,6 +11,8 @@ import (
 
 var httpClient = safehttp.NewClient(30 * time.Second)
 
+const maxFeedSize = 5 << 20 // 5 MiB
+
 type FetchResult struct {
 	Data         []byte
 	LastModified string
@@ -47,10 +49,16 @@ func Fetch(url string, lastModified, etag *string) (*FetchResult, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, url)
 	}
+	if resp.ContentLength > maxFeedSize {
+		return nil, fmt.Errorf("feed response exceeds %d byte limit: %s", maxFeedSize, url)
+	}
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxFeedSize+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(data) > maxFeedSize {
+		return nil, fmt.Errorf("feed response exceeds %d byte limit: %s", maxFeedSize, url)
 	}
 
 	return &FetchResult{

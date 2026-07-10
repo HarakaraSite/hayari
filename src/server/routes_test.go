@@ -68,6 +68,19 @@ func TestHTTPServerTimeouts(t *testing.T) {
 	}
 }
 
+func TestIsLoopbackAddress(t *testing.T) {
+	for _, addr := range []string{"127.0.0.1:7070", "[::1]:7070", "localhost:7070"} {
+		if !isLoopbackAddress(addr) {
+			t.Errorf("%q should be loopback", addr)
+		}
+	}
+	for _, addr := range []string{":7070", "0.0.0.0:7070", "192.168.1.2:7070"} {
+		if isLoopbackAddress(addr) {
+			t.Errorf("%q should not be loopback", addr)
+		}
+	}
+}
+
 func TestHealthzMethodNotAllowed(t *testing.T) {
 	_, ts := newTestServer(t)
 	resp := doRequest(t, ts, http.MethodPost, "/healthz", "")

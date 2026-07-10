@@ -124,6 +124,17 @@ func TestRefreshFeedRecordsError(t *testing.T) {
 	}
 }
 
+func TestFetchRejectsOversizedResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", maxFeedSize+1))
+		fmt.Fprint(w, strings.Repeat("x", maxFeedSize+1))
+	}))
+	defer srv.Close()
+	if _, err := Fetch(srv.URL, nil, nil); err == nil {
+		t.Fatal("oversized feed response was accepted")
+	}
+}
+
 func TestRefreshFeedClearsErrorOnSuccess(t *testing.T) {
 	db := newTestDB(t)
 	srv := newFeedServer(t)
