@@ -8,9 +8,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/nkanaev/yarr2/src/content"
-	"github.com/nkanaev/yarr2/src/parser"
-	"github.com/nkanaev/yarr2/src/storage"
+	"forge.harakara.site/littleisland/hayari/src/content"
+	"forge.harakara.site/littleisland/hayari/src/parser"
+	"forge.harakara.site/littleisland/hayari/src/storage"
 )
 
 const (

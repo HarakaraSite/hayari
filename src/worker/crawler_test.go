@@ -9,7 +9,7 @@ import (
 
 func TestFindFeedsUsesRSSUserAgentAndExtractsRelativeLinks(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got, want := r.Header.Get("User-Agent"), "yarr2/1.0 (+https://github.com/nkanaev/yarr2)"; got != want {
+		if got, want := r.Header.Get("User-Agent"), "hayari/1.0 (+https://forge.harakara.site/littleisland/hayari)"; got != want {
 			t.Fatalf("User-Agent = %q, want %q", got, want)
 		}
 		w.Header().Set("Content-Type", "text/html")

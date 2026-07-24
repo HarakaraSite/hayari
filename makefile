@@ -1,16 +1,16 @@
-BINARY = yarr2
+BINARY = hayari
 VERSION ?= dev
 
 .PHONY: build build-gui run clean test
 
 build:
-	go build -ldflags "-X main.Version=$(VERSION)" -o $(BINARY) ./cmd/yarr2
+	go build -ldflags "-X main.Version=$(VERSION)" -o $(BINARY) ./cmd/hayari
 
 build-gui:
-	go build -tags gui -ldflags "-X main.Version=$(VERSION)" -o $(BINARY)-gui ./cmd/yarr2
+	go build -tags gui -ldflags "-X main.Version=$(VERSION)" -o $(BINARY)-gui ./cmd/hayari
 
 run:
-	go run ./cmd/yarr2
+	go run ./cmd/hayari
 
 test:
 	go test ./...

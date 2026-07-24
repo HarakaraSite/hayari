@@ -8,11 +8,11 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/nkanaev/yarr2/src/server"
+	"forge.harakara.site/littleisland/hayari/src/server"
 )
 
 func Start(s *server.Server) {
-	log.Printf("Starting yarr2 on http://%s", s.Addr)
+	log.Printf("Starting Hayari on http://%s", s.Addr)
 
 	errCh := make(chan error, 1)
 	go func() {

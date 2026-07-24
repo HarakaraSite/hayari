@@ -1,4 +1,4 @@
-# yarr2
+# Hayari
 
 A self-hosted RSS aggregator written in Go with a vanilla JS frontend.
 
@@ -24,23 +24,23 @@ make build-gui
 ## Running
 
 ```sh
-./yarr2 --addr 127.0.0.1:7070 --db path/to/yarr.db --user your-user --pass your-password
+./hayari --addr 127.0.0.1:7070 --db path/to/hayari.db --user your-user --pass your-password
 ```
 
 ## Secure deployment
 
-yarr2 does not provide TLS itself. Run it only behind a TLS-terminating reverse proxy such as Caddy or nginx:
+Hayari does not provide TLS itself. Run it only behind a TLS-terminating reverse proxy such as Caddy or nginx:
 
 ```text
-Browser / RSS client -- HTTPS --> reverse proxy -- HTTP --> yarr2 (127.0.0.1:7070)
+Browser / RSS client -- HTTPS --> reverse proxy -- HTTP --> Hayari (127.0.0.1:7070)
 ```
 
-- Bind yarr2 to `127.0.0.1`; do not expose its HTTP listener directly to the internet.
+- Bind Hayari to `127.0.0.1`; do not expose its HTTP listener directly to the internet.
 - Configure the reverse proxy to redirect HTTP to HTTPS.
-- Always configure `--user` and `--pass` in production. Without both, yarr2 permits requests without authentication for local development.
-- yarr2 refuses an unauthenticated listener outside loopback by default. `--allow-insecure-no-auth` overrides this only for intentional local/testing use.
+- Always configure `--user` and `--pass` in production. Without both, Hayari permits requests without authentication for local development.
+- Hayari refuses an unauthenticated listener outside loopback by default. `--allow-insecure-no-auth` overrides this only for intentional local/testing use.
 - Treat the proxy access log as sensitive because it includes requested URLs.
-- When the proxy terminates HTTPS, start yarr2 with `--secure-cookie` so browser session cookies are sent only over HTTPS.
+- When the proxy terminates HTTPS, start Hayari with `--secure-cookie` so browser session cookies are sent only over HTTPS.
 
 ### Google Reader login
 
@@ -49,14 +49,14 @@ Browser / RSS client -- HTTPS --> reverse proxy -- HTTP --> yarr2 (127.0.0.1:707
 For a legacy client that requires GET, explicitly opt in:
 
 ```sh
-./yarr2 --allow-greader-login-get
+./hayari --allow-greader-login-get
 ```
 
 Use this only behind HTTPS and restrict access to proxy logs.
 
 ## API
 
-yarr2 implements the Google Reader / FreshRSS API:
+Hayari implements the Google Reader / FreshRSS API:
 
 - `POST /accounts/ClientLogin` - Authentication
 - `GET  /reader/api/0/subscription/list` - Subscription list

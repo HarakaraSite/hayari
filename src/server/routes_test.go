@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nkanaev/yarr2/src/storage"
+	"forge.harakara.site/littleisland/hayari/src/storage"
 )
 
 // Helpers reuse newTestServer and buildMux from greader_test.go.

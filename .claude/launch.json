@@ -2,9 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "yarr2",
+      "name": "hayari",
       "runtimeExecutable": "go",
-      "runtimeArgs": ["run", "./cmd/yarr2", "--addr", "localhost:8765"],
+      "runtimeArgs": ["run", "./cmd/hayari", "--addr", "localhost:8765"],
       "port": 8765,
       "autoPort": false
     }

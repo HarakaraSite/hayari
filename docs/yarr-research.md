@@ -1,6 +1,6 @@
 # yarr 機能調査メモ
 
-yarr2 設計の参考とするため、オリジナル [yarr](https://github.com/nkanaev/yarr) の実装を調査した結果。
+hayari 設計の参考とするため、オリジナル [yarr](https://github.com/nkanaev/yarr) の実装を調査した結果。
 
 ---
 
@@ -119,7 +119,7 @@ GET    /opml/export            OPML エクスポート（フォルダ階層含�
 ```
 GET    /page?url=...           記事本文クロール（Readability モード用）
 GET    /logout                 認証クッキー削除
-GET    /fever/                 Fever API v3（yarr は Fever 互換、yarr2 は FreshRSS 互換に変更）
+GET    /fever/                 Fever API v3（yarr は Fever 互換、hayari は FreshRSS 互換に変更）
 ```
 
 ---
@@ -305,9 +305,9 @@ GET    /fever/                 Fever API v3（yarr は Fever 互換、yarr2 は 
 
 ---
 
-## yarr2 との差分・変更点
+## hayari との差分・変更点
 
-| 項目 | yarr（オリジナル） | yarr2 |
+| 項目 | yarr（オリジナル） | hayari |
 |---|---|---|
 | 外部互換 API | Fever API v3 | FreshRSS / Google Reader API |
 | フロントエンド | Vue.js 3 | Vanilla JS |
@@ -317,7 +317,7 @@ GET    /fever/                 Fever API v3（yarr は Fever 互換、yarr2 は 
 
 ---
 
-## 実装状況・未実装事項（yarr2）
+## 実装状況・未実装事項（hayari）
 
 ### 実装済み
 

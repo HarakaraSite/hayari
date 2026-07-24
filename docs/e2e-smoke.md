@@ -1,4 +1,4 @@
-# yarr2 基本 E2E smoke ケース
+# hayari 基本 E2E smoke ケース
 
 最終更新: 2026-07-10
 
@@ -32,8 +32,8 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-go build -o "$TMP_DIR/yarr2" ./cmd/yarr2
-"$TMP_DIR/yarr2" \
+go build -o "$TMP_DIR/hayari" ./cmd/hayari
+"$TMP_DIR/hayari" \
   --addr "127.0.0.1:${PORT}" \
   --db "$TMP_DIR/yarr.db" \
   --user "$USER_NAME" \

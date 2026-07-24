@@ -1,4 +1,4 @@
-// app.js — yarr2 main application (vanilla JS)
+// app.js — hayari main application (vanilla JS)
 'use strict';
 
 const App = (() => {

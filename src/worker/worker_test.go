@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nkanaev/yarr2/src/storage"
+	"forge.harakara.site/littleisland/hayari/src/storage"
 )
 
 func TestMain(m *testing.M) {
@@ -24,7 +24,7 @@ func TestMain(m *testing.M) {
 
 func newTestDB(t *testing.T) *storage.Storage {
 	t.Helper()
-	f, err := os.CreateTemp("", "yarr2-worker-test-*.db")
+	f, err := os.CreateTemp("", "hayari-worker-test-*.db")
 	if err != nil {
 		t.Fatal(err)
 	}

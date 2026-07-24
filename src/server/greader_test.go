@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nkanaev/yarr2/src/storage"
+	"forge.harakara.site/littleisland/hayari/src/storage"
 )
 
 func TestMain(m *testing.M) {
@@ -27,7 +27,7 @@ func TestMain(m *testing.M) {
 
 func newTestServer(t *testing.T) (*Server, *httptest.Server) {
 	t.Helper()
-	f, err := os.CreateTemp("", "yarr2-server-test-*.db")
+	f, err := os.CreateTemp("", "hayari-server-test-*.db")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -727,7 +727,7 @@ func TestFreshRSSGReaderItemContentsForNetNewsWire(t *testing.T) {
 	itemID := fmt.Sprintf("tag:google.com,2005:reader/item/%016x", id)
 	contentsResponse := grPost(t, ts, token, freshRSSGReaderPrefix+"/reader/api/0/stream/items/contents", url.Values{
 		"i": {ids.ItemRefs[0].ID, itemID},
-		"T": {"unused-by-yarr2"},
+		"T": {"unused-by-hayari"},
 	})
 	var contents struct {
 		ID      string                   `json:"id"`

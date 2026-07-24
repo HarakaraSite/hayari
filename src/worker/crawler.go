@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nkanaev/yarr2/src/safehttp"
+	"forge.harakara.site/littleisland/hayari/src/safehttp"
 	"golang.org/x/net/html"
 )
 
@@ -31,7 +31,7 @@ func findFeeds(client *http.Client, pageURL string) ([]FoundFeed, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "yarr2/1.0 (+https://github.com/nkanaev/yarr2)")
+	req.Header.Set("User-Agent", "hayari/1.0 (+https://forge.harakara.site/littleisland/hayari)")
 	req.Header.Set("Accept", "text/html, application/xhtml+xml, application/xml;q=0.9, */*;q=0.8")
 
 	resp, err := client.Do(req)

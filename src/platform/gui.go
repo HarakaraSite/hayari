@@ -5,18 +5,18 @@ package platform
 import (
 	"log"
 
+	"forge.harakara.site/littleisland/hayari/src/server"
 	"fyne.io/systray"
-	"github.com/nkanaev/yarr2/src/server"
 )
 
 func Start(s *server.Server) {
 	onReady := func() {
-		systray.SetTitle("yarr2")
-		systray.SetTooltip("yarr2 RSS reader")
+		systray.SetTitle("Hayari")
+		systray.SetTooltip("Hayari RSS reader")
 
 		mOpen := systray.AddMenuItem("Open", "Open in browser")
 		systray.AddSeparator()
-		mQuit := systray.AddMenuItem("Quit", "Quit yarr2")
+		mQuit := systray.AddMenuItem("Quit", "Quit Hayari")
 
 		go func() {
 			for {

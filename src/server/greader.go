@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nkanaev/yarr2/src/storage"
+	"forge.harakara.site/littleisland/hayari/src/storage"
 )
 
 // In-memory token store (token -> expiry). Tokens are lost on restart;

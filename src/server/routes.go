@@ -12,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nkanaev/yarr2/src/assets"
-	"github.com/nkanaev/yarr2/src/content"
-	"github.com/nkanaev/yarr2/src/safehttp"
-	"github.com/nkanaev/yarr2/src/storage"
-	"github.com/nkanaev/yarr2/src/worker"
+	"forge.harakara.site/littleisland/hayari/src/assets"
+	"forge.harakara.site/littleisland/hayari/src/content"
+	"forge.harakara.site/littleisland/hayari/src/safehttp"
+	"forge.harakara.site/littleisland/hayari/src/storage"
+	"forge.harakara.site/littleisland/hayari/src/worker"
 )
 
 func (s *Server) registerRoutes(mux *http.ServeMux) {

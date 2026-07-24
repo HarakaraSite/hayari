@@ -1,4 +1,4 @@
-module github.com/nkanaev/yarr2
+module forge.harakara.site/littleisland/hayari
 
 go 1.25.0
 

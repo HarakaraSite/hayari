@@ -23,7 +23,7 @@ jobs:
           cache-dependency-path: go.sum
 
       - name: Build
-        run: go build ./cmd/yarr2
+        run: go build ./cmd/hayari
 
       - name: Test
         run: go test -race ./...

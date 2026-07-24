@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/nkanaev/yarr2/src/safehttp"
+	"forge.harakara.site/littleisland/hayari/src/safehttp"
 )
 
 var httpClient = safehttp.NewClient(30 * time.Second)
@@ -26,7 +26,7 @@ func Fetch(url string, lastModified, etag *string) (*FetchResult, error) {
 		return nil, err
 	}
 
-	req.Header.Set("User-Agent", "yarr2/1.0 (+https://github.com/nkanaev/yarr2)")
+	req.Header.Set("User-Agent", "hayari/1.0 (+https://forge.harakara.site/littleisland/hayari)")
 	req.Header.Set("Accept", "application/rss+xml, application/atom+xml, application/json, text/xml, */*")
 
 	if lastModified != nil && *lastModified != "" {

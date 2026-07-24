@@ -60,7 +60,7 @@
 
 ### 連絡・注意事項
 - 作業ツリーには未コミット変更あり（`.handoff/handoff.md`、assets、crawler と crawler_test）。コミット・push は未実施。
-- ローカル確認用 DB は一時領域 `/tmp/yarr2-local-test.sTPhEq/`。認証は `e2e-user` / `e2e-password`。
+- ローカル確認用 DB は一時領域 `/tmp/hayari-local-test.sTPhEq/`。認証は `e2e-user` / `e2e-password`。
 
 ## 2026-07-23 22:41 JST
 
@@ -165,3 +165,36 @@
 
 ### 連絡・注意事項
 - ローカルテストサーバーは `http://127.0.0.1:17070` で稼働中。ReadKit診断プロキシは停止済み。
+
+## 2026-07-24 19:58 JST
+
+- 実行エージェント: Codex
+- モデル: 不明
+- 作業トピック: Hayari リリース計画と名称移行
+
+### 実施したこと
+- `docs/v1-release-plan.md` を更新し、Forgejo の新規リポジトリ `forge.harakara.site/littleisland/hayari`、採用済み v1 要件、対象外、公開・検証・ロールバック手順を保存した。
+- Go module path、`cmd/hayari`、ビルド、CI、UI、テスト、文書、既定 DB、User-Agent を Hayari／`hayari` へ統一し、旧表記の残存を除去した。
+- `go test ./...`、`go vet ./...`、JavaScript 構文確認、`make build VERSION=v1.0.0-rc.0`、`./hayari --version`、差分チェックを成功させた。
+
+### 次のタスク候補
+- 認証情報を安全に渡す起動設定、README 日本語版、LICENSE/CHANGELOG、Forgejo Actions リリース workflow を計画順に実装する。
+
+### 連絡・注意事項
+- Forgejo リポジトリ作成、remote 設定、commit、push、タグ、Release は未実施。公開承認後にだけ行う。
+
+## 2026-07-24 20:00 JST
+
+- 実行エージェント: Codex
+- モデル: 不明
+- 作業トピック: Hayari Forgejo リポジトリ作成
+
+### 実施したこと
+- `fja repo create hayari --force-remote` で private の `littleisland/hayari` を Forgejo に作成した。
+- `origin` を `https://forge.harakara.site/littleisland/hayari.git` に設定し、空のリモートであることを確認した。
+
+### 次のタスク候補
+- 常用環境で確認できる候補コミットを作成して private リポジトリへ push する。公開設定の変更は確認後に別途行う。
+
+### 連絡・注意事項
+- 現在の名称移行・リリース準備の変更は未コミットかつ未 push。リポジトリの public 化、タグ、Release は未実施。

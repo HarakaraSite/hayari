@@ -34,7 +34,7 @@ func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		w.Header().Set("WWW-Authenticate", `Basic realm="yarr2"`)
+		w.Header().Set("WWW-Authenticate", `Basic realm="hayari"`)
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 	}
 }

@@ -1,6 +1,6 @@
 # FreshRSS / Google Reader 互換 API
 
-yarr2 の実装済み API リファレンス。FreshRSS の `greader.php` を基準にし、実機で同期確認した ReadKit と NetNewsWire の互換要件を記録する。
+hayari の実装済み API リファレンス。FreshRSS の `greader.php` を基準にし、実機で同期確認した ReadKit と NetNewsWire の互換要件を記録する。
 
 ## API の入口
 
@@ -464,7 +464,7 @@ s=feed/12345&ts=1623456789000000000
 
 #### 未実装
 
-以下は FreshRSS にはあるが、yarr2 では現時点で未実装。クライアント互換の根拠として扱わない。
+以下は FreshRSS にはあるが、hayari では現時点で未実装。クライアント互換の根拠として扱わない。
 
 **POST /reader/api/0/rename-tag** — ラベル名変更
 ```

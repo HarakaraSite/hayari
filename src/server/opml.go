@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/nkanaev/yarr2/src/storage"
+	"forge.harakara.site/littleisland/hayari/src/storage"
 )
 
 // --- OPML XML structures ---
@@ -155,7 +155,7 @@ func (s *Server) handleOPMLExport(w http.ResponseWriter, r *http.Request) {
 
 	doc := opmlDoc{
 		Version: "1.1",
-		Head:    opmlHead{Title: "yarr2 subscriptions"},
+		Head:    opmlHead{Title: "hayari subscriptions"},
 		Body:    opmlBody{Outlines: outlines},
 	}
 
@@ -166,7 +166,7 @@ func (s *Server) handleOPMLExport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="yarr2.opml"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="hayari.opml"`)
 	fmt.Fprintf(w, "%s\n%s\n", xml.Header, out)
 }
 

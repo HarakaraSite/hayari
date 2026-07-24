@@ -9,7 +9,7 @@ import (
 
 func newTestDB(t *testing.T) *Storage {
 	t.Helper()
-	f, err := os.CreateTemp("", "yarr2-test-*.db")
+	f, err := os.CreateTemp("", "hayari-test-*.db")
 	if err != nil {
 		t.Fatal(err)
 	}

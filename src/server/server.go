@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nkanaev/yarr2/src/storage"
-	"github.com/nkanaev/yarr2/src/worker"
+	"forge.harakara.site/littleisland/hayari/src/storage"
+	"forge.harakara.site/littleisland/hayari/src/worker"
 )
 
 const (

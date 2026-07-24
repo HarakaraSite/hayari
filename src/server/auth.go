@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nkanaev/yarr2/src/assets"
+	"forge.harakara.site/littleisland/hayari/src/assets"
 )
 
 const sessionCookieName = "session"
