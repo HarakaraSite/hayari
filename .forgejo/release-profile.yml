@@ -1,0 +1,37 @@
+version: 1
+
+runner_label: ubuntu-latest
+actions:
+  checkout: actions/checkout@v4
+  setup_go: actions/setup-go@v5
+  release: actions/forgejo-release@v2
+
+release:
+  uploader_kind: forgejo-release-v2-public
+  url_expression: ${{ forgejo.server_url }}
+  repository_expression: ${{ forgejo.repository }}
+  token_expression: ${{ forgejo.token }}
+  tag_expression: ${{ forgejo.ref_name }}
+  notes_expression: ${{ format('Release {0}', forgejo.ref_name) }}
+
+build:
+  product: hayari
+  package: ./cmd/hayari
+  cgo_enabled: false
+  ldflags: -s -w -X main.Version=${{ forgejo.ref_name }}
+  targets:
+    - darwin/amd64
+    - darwin/arm64
+    - linux/amd64
+    - linux/arm64
+    - windows/amd64
+    - windows/arm64
+
+quality:
+  test_command: go test -race ./...
+  vet_command: go vet ./...
+  checksums: true
+
+failure_summary:
+  mode: log-tail
+  log_tail_bytes: 4000

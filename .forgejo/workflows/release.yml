@@ -1,0 +1,133 @@
+# Rendered from .forgejo/release-profile.yml.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Test
+        id: test
+        run: |
+          set -euo pipefail
+          { go test -race ./...; } 2>&1 | tee test.log
+
+      - name: Vet
+        id: vet
+        run: |
+          set -euo pipefail
+          { go vet ./...; } 2>&1 | tee vet.log
+
+      - name: Build binaries
+        id: build
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          LDFLAGS='-s -w -X main.Version=${{ forgejo.ref_name }}'
+          {
+            CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o dist/hayari-darwin-amd64 ./cmd/hayari
+            CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="$LDFLAGS" -o dist/hayari-darwin-arm64 ./cmd/hayari
+            CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o dist/hayari-linux-amd64 ./cmd/hayari
+            CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="$LDFLAGS" -o dist/hayari-linux-arm64 ./cmd/hayari
+            CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o dist/hayari-windows-amd64.exe ./cmd/hayari
+            CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -trimpath -ldflags="$LDFLAGS" -o dist/hayari-windows-arm64.exe ./cmd/hayari
+            (cd dist && sha256sum hayari-* > SHA256SUMS)
+          } 2>&1 | tee build.log
+
+      - name: Write CI failure summary
+        if: failure()
+        env:
+          TAG: ${{ forgejo.ref_name }}
+          SHA: ${{ forgejo.sha }}
+          RUN_ID: ${{ forgejo.run_id }}
+          RUN_NUMBER: ${{ forgejo.run_number }}
+          FORGE_URL: ${{ forgejo.server_url }}
+          REPO: ${{ forgejo.repository }}
+          TEST_OUTCOME: ${{ steps.test.outcome }}
+          VET_OUTCOME: ${{ steps.vet.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+        run: |
+          set -uo pipefail
+          mkdir -p dist
+          rm -f dist/hayari-* dist/SHA256SUMS
+
+          FAILED_STEP="unknown"
+          LOG_FILE=""
+          if [ "$TEST_OUTCOME" = "failure" ]; then
+            FAILED_STEP="test"
+            LOG_FILE="test.log"
+          elif [ "$VET_OUTCOME" = "failure" ]; then
+            FAILED_STEP="vet"
+            LOG_FILE="vet.log"
+          elif [ "$BUILD_OUTCOME" = "failure" ]; then
+            FAILED_STEP="build"
+            LOG_FILE="build.log"
+          fi
+          export FAILED_STEP
+
+          : > /tmp/log_tail.txt
+          if [ -n "$LOG_FILE" ] && [ -f "$LOG_FILE" ]; then
+            tail -c 4000 "$LOG_FILE" > /tmp/log_tail.txt || true
+          fi
+
+          cat > /tmp/ci-failure-summary.go <<'GOEOF'
+          package main
+
+          import (
+            "encoding/json"
+            "fmt"
+            "os"
+            "time"
+          )
+
+          func main() {
+            logTail, _ := os.ReadFile("/tmp/log_tail.txt")
+            out := map[string]any{
+              "schema_version": 1,
+              "tag":             os.Getenv("TAG"),
+              "sha":             os.Getenv("SHA"),
+              "run_id":          os.Getenv("RUN_ID"),
+              "run_number":      os.Getenv("RUN_NUMBER"),
+              "run_url":         fmt.Sprintf("%s/%s/actions/runs/%s", os.Getenv("FORGE_URL"), os.Getenv("REPO"), os.Getenv("RUN_NUMBER")),
+              "failed_step":     os.Getenv("FAILED_STEP"),
+              "test_outcome":    os.Getenv("TEST_OUTCOME"),
+              "vet_outcome":     os.Getenv("VET_OUTCOME"),
+              "build_outcome":   os.Getenv("BUILD_OUTCOME"),
+              "log_tail":        string(logTail),
+              "generated_at":    time.Now().UTC().Format(time.RFC3339),
+            }
+            enc := json.NewEncoder(os.Stdout)
+            enc.SetIndent("", "  ")
+            if err := enc.Encode(out); err != nil {
+              fmt.Fprintln(os.Stderr, err)
+              os.Exit(1)
+            }
+          }
+          GOEOF
+          go run /tmp/ci-failure-summary.go > dist/ci-failure-summary.json
+
+      - name: Upload release
+        if: success()
+        uses: actions/forgejo-release@v2
+        with:
+          direction: upload
+          url: ${{ forgejo.server_url }}
+          repo: ${{ forgejo.repository }}
+          token: ${{ forgejo.token }}
+          tag: ${{ forgejo.ref_name }}
+          release-dir: dist
+          release-notes: ${{ format('Release {0}', forgejo.ref_name) }}
