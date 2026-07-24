@@ -35,7 +35,7 @@
 
 以下をすべて満たした候補コミットだけを公開する。
 
-- `go test ./...`、`go test -race ./...`、`go vet ./...`、JavaScript 構文確認、`git diff --check` が成功する。
+- 通常 CI とタグ Release では `go test ./...`、`go vet ./...`、JavaScript 構文確認、`git diff --check` が成功する。`go test -race ./...` は C compiler のあるローカル環境でリリース前に一度実行する手動品質ゲートとする。
 - Darwin、Linux、Windows の amd64/arm64 向けサーバーバイナリを `CGO_ENABLED=0` でビルドできる。
 - `hayari --version` と `/api/status` が同一のタグを返す。
 - 初回起動、ログイン、フィード追加、記事閲覧、既読・スター、更新、設定保存、OPML を実機確認する。
