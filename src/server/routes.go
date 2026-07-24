@@ -25,8 +25,11 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	auth := s.authMiddleware
 
 	// Static assets (including index.html) are auth-protected so the app
-	// shell is not exposed without credentials. /login stays public.
+	// shell is not exposed without credentials. They are embedded in the
+	// executable, so retaining an old copy after a local restart would run a
+	// mismatched application. /login stays public.
 	mux.HandleFunc("/", auth(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
 		if r.URL.Path == "/" {
 			http.ServeFileFS(w, r, assets.FS, "index.html")
 			return

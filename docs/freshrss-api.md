@@ -1,7 +1,25 @@
-# FreshRSS / Google Reader 互換 API 仕様
+# FreshRSS / Google Reader 互換 API
 
-yarr2 のサーバー実装リファレンス。  
-主要クライアント（Reeder, NetNewsWire, ReadKit 等）との互換性を確保するための仕様をまとめる。
+yarr2 の実装済み API リファレンス。FreshRSS の `greader.php` を基準にし、実機で同期確認した ReadKit と NetNewsWire の互換要件を記録する。
+
+## API の入口
+
+両方の入口を同じハンドラーへ接続する。
+
+| 入口 | 主な利用クライアント | 用途 |
+|---|---|---|
+| `/accounts/ClientLogin` と `/reader/api/0/...` | NetNewsWire | Google Reader 形式 |
+| `/api/greader.php/accounts/ClientLogin` と `/api/greader.php/reader/api/0/...` | ReadKit の FreshRSS 接続 | FreshRSS 形式 |
+
+Web UI の認証は `/login` の Cookie セッションであり、このトークンAPIとは別系統。ただしフィード・記事・状態は同じデータベースを共有する。
+
+## 実機確認（2026-07-24）
+
+- **ReadKit**: ログイン、フォルダ／フィード、未読・スター・既読の記事同期、本文取得、`edit-tag` 更新を確認。
+- **NetNewsWire**: ログイン、フォルダ／フィード、記事一覧・本文の同期、`edit-tag` 更新を確認。
+- ReadKit は FreshRSS 入口、NetNewsWire は Google Reader 入口を用いた。
+
+記事の初回同期では、ReadKit は `stream/items/ids` を1000件単位でページングし、続けて `stream/items/contents` を複数回POSTする。IDと継続トークンの形式を変えないこと。
 
 ---
 
@@ -27,8 +45,8 @@ Auth=<token>
 3つは同じトークン値でよい。
 
 **注意点**
-- 一部クライアント（Reeder）は POST ではなく GET で送ることがある → 両方受け付ける
-- トークンはセッション中有効であれば形式は自由（16〜32文字の hex 推奨）
+- 通常は POST を使う。GET は `--allow-greader-login-get` 指定時だけ許可する。
+- トークンはメモリ保持で、サーバー再起動時に失効する。ReadKit と NetNewsWire は 401 後に再ログインする。
 
 ---
 
@@ -94,7 +112,7 @@ user/-/label/Work
 
 ## Item ID
 
-### フォーマット
+### エントリ表現のフォーマット
 
 ```
 tag:google.com,2005:reader/item/<hex_id>
@@ -117,11 +135,20 @@ hex := strings.TrimPrefix(fullID, "tag:google.com,2005:reader/item/")
 id, err := strconv.ParseInt(hex, 16, 64)
 ```
 
-### Continuation（ページネーション）トークン
+### 同期用IDとページネーション
 
-- レスポンスに `"continuation": "<last_item_id>"` を含める（まだアイテムが存在する場合）
-- クライアントは次のリクエストで `?c=<last_item_id>` を付ける
-- 実装: `c` の値以降のアイテムを `n+1` 件取得し、先頭1件を除いて返す（重複防止）
+`stream/items/ids` は FreshRSS に合わせ、DB IDを **10進数文字列** で返す。`continuation` も最後に返したDB IDの10進数文字列にする。
+
+```json
+{
+  "itemRefs": [{"id": "3285"}],
+  "continuation": "1173"
+}
+```
+
+NetNewsWire はこの10進IDを受け、本文取得時に `tag:google.com,2005:reader/item/<16桁hex>` へ変換する。`stream/items/contents` は、10進IDとこのタグ付き16進IDの両方を受け入れる。
+
+`stream/contents` の内部ページングには日時とIDを含む不透明なカーソルを使うため、`stream/items/ids` の10進継続トークンとは別物である。
 
 ---
 
@@ -353,15 +380,16 @@ ac=edit&s=feed/12345&t=New+Title&a=user/-/label/NewFolder&r=user/-/label/OldFold
 ```json
 {
   "itemRefs": [
-    {"id": "00000000000000a1"},
-    {"id": "00000000000000a2"}
+    {"id": "161"},
+    {"id": "162"}
   ],
   "continuation": "1000"
 }
 ```
 
 **注意**
-- `id` はタグ形式ではなく **hex 文字列のみ**
+- `id` はタグ形式ではない **10進数文字列**。
+- `continuation` も10進数文字列。
 
 ---
 
@@ -371,9 +399,11 @@ ac=edit&s=feed/12345&t=New+Title&a=user/-/label/NewFolder&r=user/-/label/OldFold
 
 **リクエスト (form data、繰り返し可)**
 ```
+i=161
 i=tag:google.com,2005:reader/item/00000000000000a1
-i=tag:google.com,2005:reader/item/00000000000000a2
 ```
+
+両形式を受け付ける。FreshRSS 形式のクライアントは10進IDを、NetNewsWire はタグ付き16進IDを送る。
 
 **クエリパラメータ**
 - `r` — ソート順
@@ -430,7 +460,11 @@ s=feed/12345&ts=1623456789000000000
 
 ---
 
-### オプションエンドポイント（あると望ましい）
+### 補助エンドポイント
+
+#### 未実装
+
+以下は FreshRSS にはあるが、yarr2 では現時点で未実装。クライアント互換の根拠として扱わない。
 
 **POST /reader/api/0/rename-tag** — ラベル名変更
 ```
@@ -444,7 +478,9 @@ T=<token>&s=user/-/label/LabelName
 ```
 レスポンス: `OK`
 
-**POST /reader/api/0/subscription/quickadd** — フィードURL から素早く購読
+#### 実装済み: POST /reader/api/0/subscription/quickadd
+
+フィードURLから素早く購読する。
 ```
 quickadd=http://example.com/feed.xml
 ```
@@ -506,7 +542,7 @@ Access-Control-Max-Age: 600
 
 ---
 
-## 最低限必要なエンドポイント（Reeder / NetNewsWire 対応）
+## 実装済みエンドポイント
 
 | エンドポイント | 用途 |
 |---|---|
@@ -517,11 +553,13 @@ Access-Control-Max-Age: 600
 | `POST /reader/api/0/subscription/edit` | フィード追加/削除/編集 |
 | `GET /reader/api/0/tag/list` | ラベル/フォルダ一覧 |
 | `GET /reader/api/0/unread-count` | 未読数 |
-| `GET /reader/api/0/stream/contents/` | アイテム取得 |
+| `GET /reader/api/0/stream/contents/{stream-id}` | アイテム取得 |
 | `GET /reader/api/0/stream/items/ids` | アイテム ID 取得 |
 | `POST /reader/api/0/stream/items/contents` | アイテム全文取得 |
 | `POST /reader/api/0/edit-tag` | 既読/スター操作 |
 | `POST /reader/api/0/mark-all-as-read` | 一括既読 |
+
+上の各パスは `/api/greader.php` を前置した FreshRSS 入口でも利用できる。
 
 ---
 

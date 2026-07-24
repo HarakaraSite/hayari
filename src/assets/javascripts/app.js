@@ -28,7 +28,7 @@ const App = (() => {
 
   let appEl,
       feedList, itemList, itemListTitle, itemListEmpty,
-      btnRefresh, btnMarkAllRead, btnAddFeed, btnSettings,
+      btnRefresh, btnMarkAllRead, btnManageSource, btnAddFeed, btnAddFolder, btnSettings,
       searchInput,
       modalAddFeed, formAddFeed, inputFeedUrl, feedCandidates, btnFeedSubmit,
       modalManage, modalManageTitle, modalManageBody,
@@ -37,7 +37,15 @@ const App = (() => {
       detailEmpty, detailContent,
       detailTitle, detailMeta, detailBody,
       btnStar, btnToggleRead, btnReadability, btnOpen, btnPrevItem, btnNextItem,
-      loadMoreSentinel;
+      loadMoreSentinel, sidebarResizer, itemListResizer;
+
+  const columnWidths = {
+    sidebar: { cssVar: '--sidebar-width', storageKey: 'hayari.v2.sidebar-width', fallback: 260, min: 200 },
+    itemList: { cssVar: '--item-list-width', storageKey: 'hayari.v2.item-list-width', fallback: 320, min: 240 },
+  };
+  const minDetailWidth = 280;
+  const resizerWidth = 16;
+  let preferredColumnWidths;
 
   // ── Init ───────────────────────────────────────────────────────
   async function init() {
@@ -49,7 +57,9 @@ const App = (() => {
     itemListEmpty    = $('#item-list-empty');
     btnRefresh       = $('#btn-refresh');
     btnMarkAllRead   = $('#btn-mark-all-read');
+    btnManageSource  = $('#btn-manage-source');
     btnAddFeed       = $('#btn-add-feed');
+    btnAddFolder     = $('#btn-add-folder');
     btnSettings      = $('#btn-settings');
     searchInput      = $('#search-input');
     modalAddFeed     = $('#modal-add-feed');
@@ -77,9 +87,12 @@ const App = (() => {
     btnPrevItem      = $('#btn-prev-item');
     btnNextItem      = $('#btn-next-item');
     loadMoreSentinel = $('#load-more-sentinel');
+    sidebarResizer   = $('#sidebar-resizer');
+    itemListResizer  = $('#item-list-resizer');
 
     await Promise.all([loadSidebar(), loadSettings()]);
     setupEventListeners();
+    setupColumnResizers();
     setupInfiniteScroll();
     setupKeyBindings();
     await loadItems(true);
@@ -127,8 +140,7 @@ const App = (() => {
       header.innerHTML =
         `<span class="folder-toggle${isOpen ? ' open' : ''}">&#x25b6;</span>` +
         `<span class="folder-name">${escHTML(folder.title)}</span>` +
-        (folderUnread ? `<span class="unread-badge">${folderUnread}</span>` : '') +
-        `<button class="feed-action-btn" data-action="edit-folder" data-id="${folder.id}" title="Edit">&#x22ef;</button>`;
+        (folderUnread ? `<span class="unread-badge">${folderUnread}</span>` : '');
 
       // Folder feed list (collapsible)
       const feedsUl = document.createElement('ul');
@@ -187,14 +199,10 @@ const App = (() => {
     row.appendChild(img);
     row.insertAdjacentHTML('beforeend',
       `<span class="feed-name">${escHTML(feed.title || feed.feed_url)}</span>` +
-      (unread ? `<span class="unread-badge">${unread}</span>` : '') +
-      `<button class="feed-action-btn" data-action="edit-feed" data-id="${feed.id}" title="Edit">&#x22ef;</button>`
+      (unread ? `<span class="unread-badge">${unread}</span>` : '')
     );
 
-    row.addEventListener('click', (e) => {
-      if (e.target.dataset.action) return;
-      selectSource('feed', feed.id, feed.title || feed.feed_url);
-    });
+    row.addEventListener('click', () => selectSource('feed', feed.id, feed.title || feed.feed_url));
 
     li.appendChild(row);
     return li;
@@ -227,7 +235,7 @@ const App = (() => {
       if (!badge) {
         badge = document.createElement('span');
         badge.className = 'unread-badge';
-        row.insertBefore(badge, row.querySelector('.feed-action-btn'));
+        row.appendChild(badge);
       }
       badge.textContent = count;
     } else if (badge) {
@@ -236,13 +244,13 @@ const App = (() => {
   }
 
   function updateActiveSidebarItem() {
-    feedList.querySelectorAll('.feed-row, .folder-header').forEach(el => {
-      const feedId   = el.closest('[data-feed-id]')?.dataset.feedId;
-      const folderId = el.closest('[data-folder-id]')?.dataset.folderId;
-      let active = false;
-      if (state.sourceType === 'feed'   && feedId   && +feedId   === state.sourceId) active = true;
-      if (state.sourceType === 'folder' && folderId && +folderId === state.sourceId) active = true;
-      el.classList.toggle('active', active);
+    feedList.querySelectorAll('.feed-row').forEach(row => {
+      const feedID = +row.closest('[data-feed-id]').dataset.feedId;
+      row.classList.toggle('active', state.sourceType === 'feed' && feedID === state.sourceId);
+    });
+    feedList.querySelectorAll('.folder-header').forEach(header => {
+      const folderID = +header.closest('[data-folder-id]').dataset.folderId;
+      header.classList.toggle('active', state.sourceType === 'folder' && folderID === state.sourceId);
     });
   }
 
@@ -250,6 +258,7 @@ const App = (() => {
     state.sourceType = type;
     state.sourceId   = id;
     itemListTitle.textContent = name || 'All items';
+    btnManageSource.hidden = (type === 'all');
     updateActiveSidebarItem();
     appEl.classList.remove('show-sidebar'); // mobile: back to the list pane
     loadItems(true);
@@ -266,6 +275,7 @@ const App = (() => {
       const labels = { unread: 'Unread', starred: 'Starred', all: 'All items' };
       itemListTitle.textContent = labels[filter] || 'Items';
     }
+    btnManageSource.hidden = (state.sourceType === 'all');
     // Show mark-all-read only in unread view
     btnMarkAllRead.hidden = (filter !== 'unread');
     appEl.classList.remove('show-sidebar'); // mobile: back to the list pane
@@ -713,6 +723,33 @@ const App = (() => {
     modalManage.showModal();
   }
 
+  function openCreateFolder() {
+    modalManageTitle.textContent = 'New Folder';
+    modalManageBody.innerHTML =
+      `<form id="form-create-folder">
+        <label>Name
+          <input type="text" name="title" required autofocus />
+        </label>
+        <div class="manage-footer">
+          <span></span>
+          <button type="submit">Create</button>
+        </div>
+      </form>`;
+
+    const form = modalManageBody.querySelector('#form-create-folder');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const { title } = Object.fromEntries(new FormData(e.target));
+      const cleanTitle = title.trim();
+      if (!cleanTitle) return;
+      await API.createFolder(cleanTitle);
+      modalManage.close();
+      await loadSidebar();
+    });
+    modalManage.showModal();
+    form.elements.title.focus();
+  }
+
   // ── Source navigation (l / h) ──────────────────────────────────
   function buildSourceList() {
     const list = [{ type: 'all', id: null, name: 'All' }];
@@ -737,6 +774,8 @@ const App = (() => {
 
   // ── Mark all read ──────────────────────────────────────────────
   async function markAllRead() {
+    if (!window.confirm('Mark all items in this view as read?')) return;
+
     const params = {};
     if (state.sourceType === 'feed')   params.feed_id   = state.sourceId;
     if (state.sourceType === 'folder') params.folder_id = state.sourceId;
@@ -776,7 +815,7 @@ const App = (() => {
     if (s) {
       ['theme', 'font_size', 'refresh_rate'].forEach(key => {
         const el = formSettings.querySelector(`[name="${key}"]`);
-        if (el && s[key] != null) el.value = s[key];
+        if (el && s[key] != null) el.value = key === 'theme' && s[key] === 'beige' ? 'light' : s[key];
       });
     }
     modalSettings.showModal();
@@ -788,13 +827,20 @@ const App = (() => {
       // "auto" is not a recognized value and would lock the page to light mode.
       if (s.theme === 'auto') {
         document.documentElement.removeAttribute('data-theme');
+        document.documentElement.removeAttribute('data-color-scheme');
+      } else if (s.theme === 'beige') {
+        // Beige was an experimental setting. Keep old saved values readable
+        // while the theme is intentionally removed from Settings.
+        document.documentElement.setAttribute('data-theme', 'light');
+        document.documentElement.removeAttribute('data-color-scheme');
       } else {
         document.documentElement.setAttribute('data-theme', s.theme);
+        document.documentElement.removeAttribute('data-color-scheme');
       }
     }
-    const sizes = { small: '0.9rem', medium: '1rem', large: '1.15rem' };
+    const sizes = { small: '90%', medium: '100%', large: '115%' };
     if (s.font_size && sizes[s.font_size]) {
-      document.documentElement.style.setProperty('--article-font-size', sizes[s.font_size]);
+      document.documentElement.style.fontSize = sizes[s.font_size];
     }
   }
 
@@ -826,13 +872,24 @@ const App = (() => {
     // Refresh
     btnRefresh.addEventListener('click', async () => {
       btnRefresh.setAttribute('aria-busy', 'true');
-      await API.refreshFeeds();
-      await Promise.all([loadSidebar(), loadItems(true)]);
-      btnRefresh.removeAttribute('aria-busy');
+      btnRefresh.disabled = true;
+      try {
+        await API.refreshFeeds();
+        await Promise.all([loadSidebar(), loadItems(true)]);
+      } catch (err) {
+        alert('Refresh failed: ' + err.message);
+      } finally {
+        btnRefresh.removeAttribute('aria-busy');
+        btnRefresh.disabled = false;
+      }
     });
 
     // Mark all read
     btnMarkAllRead.addEventListener('click', markAllRead);
+    btnManageSource.addEventListener('click', () => {
+      if (state.sourceType === 'feed') openEditFeed(state.sourceId);
+      if (state.sourceType === 'folder') openEditFolder(state.sourceId);
+    });
 
     // Search
     searchInput.addEventListener('input', handleSearchInput);
@@ -842,17 +899,8 @@ const App = (() => {
 
     // Add feed
     btnAddFeed.addEventListener('click', openAddFeedModal);
+    btnAddFolder.addEventListener('click', openCreateFolder);
     formAddFeed.addEventListener('submit', handleAddFeedSubmit);
-
-    // Feed/folder action button delegation
-    feedList.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-action]');
-      if (!btn) return;
-      e.stopPropagation();
-      const { action, id } = btn.dataset;
-      if (action === 'edit-feed')   openEditFeed(id);
-      if (action === 'edit-folder') openEditFolder(id);
-    });
 
     // Mobile pane navigation
     $('#btn-show-sidebar').addEventListener('click', () => {
@@ -906,6 +954,81 @@ const App = (() => {
 
     // Hide mark-all-read on non-unread filter
     btnMarkAllRead.hidden = (state.filter !== 'unread');
+  }
+
+  // ── Desktop column resizing ───────────────────────────────────
+  function setupColumnResizers() {
+    preferredColumnWidths = savedColumnWidths();
+    applyColumnWidths(preferredColumnWidths);
+
+    enableColumnResizer(sidebarResizer, 'sidebar', 'itemList');
+    enableColumnResizer(itemListResizer, 'itemList', 'sidebar');
+    window.addEventListener('resize', () => applyColumnWidths(preferredColumnWidths));
+  }
+
+  function savedColumnWidths() {
+    return Object.fromEntries(Object.entries(columnWidths).map(([name, column]) => {
+      const saved = Number(localStorage.getItem(column.storageKey));
+      return [name, Number.isFinite(saved) && saved > 0 ? saved : column.fallback];
+    }));
+  }
+
+  function applyColumnWidths(widths) {
+    if (window.matchMedia('(max-width: 900px)').matches) return;
+
+    const available = appEl.clientWidth - minDetailWidth - resizerWidth;
+    let sidebar = Math.max(columnWidths.sidebar.min, widths.sidebar);
+    let itemList = Math.max(columnWidths.itemList.min, widths.itemList);
+    let overflow = sidebar + itemList - available;
+
+    if (overflow > 0) {
+      const itemListReduction = Math.min(overflow, itemList - columnWidths.itemList.min);
+      itemList -= itemListReduction;
+      overflow -= itemListReduction;
+      sidebar = Math.max(columnWidths.sidebar.min, sidebar - overflow);
+    }
+
+    appEl.style.setProperty(columnWidths.sidebar.cssVar, `${sidebar}px`);
+    appEl.style.setProperty(columnWidths.itemList.cssVar, `${itemList}px`);
+  }
+
+  function enableColumnResizer(resizer, columnName, otherColumnName) {
+    const column = columnWidths[columnName];
+    const otherColumn = columnWidths[otherColumnName];
+    resizer.addEventListener('pointerdown', (downEvent) => {
+      if (downEvent.button !== 0) return;
+      downEvent.preventDefault();
+
+      const startX = downEvent.clientX;
+      const startWidth = columnWidth(column);
+      const otherWidth = columnWidth(otherColumn);
+      const maxWidth = Math.max(column.min, appEl.clientWidth - otherWidth - minDetailWidth - resizerWidth);
+      resizer.setPointerCapture(downEvent.pointerId);
+      document.body.classList.add('is-resizing-columns');
+
+      const resize = (moveEvent) => {
+        if (moveEvent.pointerId !== downEvent.pointerId) return;
+        const width = Math.min(maxWidth, Math.max(column.min, startWidth + moveEvent.clientX - startX));
+        preferredColumnWidths = { ...preferredColumnWidths, [columnName]: width };
+        applyColumnWidths(preferredColumnWidths);
+      };
+      const finish = (upEvent) => {
+        if (upEvent.pointerId !== downEvent.pointerId) return;
+        localStorage.setItem(column.storageKey, String(columnWidth(column)));
+        document.body.classList.remove('is-resizing-columns');
+        document.removeEventListener('pointermove', resize);
+        document.removeEventListener('pointerup', finish);
+        document.removeEventListener('pointercancel', finish);
+      };
+      document.addEventListener('pointermove', resize);
+      document.addEventListener('pointerup', finish);
+      document.addEventListener('pointercancel', finish);
+    });
+  }
+
+  function columnWidth(column) {
+    const value = Number.parseFloat(getComputedStyle(appEl).getPropertyValue(column.cssVar));
+    return Number.isFinite(value) ? value : column.fallback;
   }
 
   // ── Keyboard shortcuts ─────────────────────────────────────────

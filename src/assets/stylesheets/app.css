@@ -8,6 +8,11 @@ html, body {
   overflow: hidden;
 }
 
+/* Keep the dense reader UI comfortable on typical desktop displays. */
+html {
+  font-size: 100%;
+}
+
 /* Remove Pico's body padding */
 body {
   padding: 0 !important;
@@ -15,8 +20,10 @@ body {
 
 /* ── App grid: sidebar | items | detail ─────────────────────── */
 #app {
+  --sidebar-width: 260px;
+  --item-list-width: 320px;
   display: grid;
-  grid-template-columns: 260px 320px 1fr;
+  grid-template-columns: var(--sidebar-width) 8px var(--item-list-width) 8px minmax(280px, 1fr);
   grid-template-rows: 100vh;
   height: 100vh;
   overflow: hidden;
@@ -29,6 +36,36 @@ body {
   border-right: 1px solid var(--pico-muted-border-color);
   overflow: hidden;
   background: var(--pico-background-color);
+  min-width: 0;
+}
+
+.column-resizer {
+  cursor: col-resize;
+  position: relative;
+  touch-action: none;
+  user-select: none;
+}
+
+.column-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.column-resizer:hover::after,
+.column-resizer:focus-visible::after,
+body.is-resizing-columns .column-resizer::after {
+  background: var(--pico-primary);
+}
+
+body.is-resizing-columns {
+  cursor: col-resize;
+  user-select: none;
 }
 
 #sidebar-header {
@@ -93,6 +130,7 @@ body {
 #feed-list li {
 	display: block;
 	width: 100%;
+	box-sizing: border-box;
 	margin: 0;
   padding: 0;
 }
@@ -105,6 +143,8 @@ body {
   padding: 0.28rem 0.5rem 0.28rem 1rem;
   cursor: pointer;
   user-select: none;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .feed-row:hover { background: var(--pico-muted-background-color); }
@@ -136,6 +176,8 @@ body {
   user-select: none;
   font-size: 0.855rem;
   font-weight: 600;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .folder-header:hover { background: var(--pico-muted-background-color); }
@@ -177,26 +219,8 @@ body {
 .feed-row.active .unread-badge,
 .folder-header.active .unread-badge {
   background: rgba(255,255,255,0.3);
+  color: var(--pico-primary-inverse);
 }
-
-/* Feed/folder action button (⋯) */
-.feed-action-btn {
-  display: none;
-  background: none;
-  border: none;
-  padding: 0 0.25rem;
-  font-size: 0.9rem;
-  cursor: pointer;
-  color: var(--pico-muted-color);
-  line-height: 1;
-  border-radius: 3px;
-  flex-shrink: 0;
-}
-.feed-row:hover .feed-action-btn,
-.folder-header:hover .feed-action-btn { display: block; }
-.feed-action-btn:hover { background: var(--pico-muted-background-color); }
-.feed-row.active .feed-action-btn,
-.folder-header.active .feed-action-btn { color: var(--pico-primary-inverse); }
 
 /* Sidebar footer */
 #sidebar-footer {
@@ -208,7 +232,8 @@ body {
   flex-shrink: 0;
 }
 
-#btn-add-feed {
+#btn-add-feed,
+#btn-add-folder {
   flex: 1;
   margin: 0;
   padding: 0.35rem 0.6rem;
@@ -222,6 +247,7 @@ body {
   border-right: 1px solid var(--pico-muted-border-color);
   overflow: hidden;
   background: var(--pico-background-color);
+  min-width: 0;
 }
 
 #item-list-header {
@@ -235,6 +261,8 @@ body {
 }
 
 #item-list-title {
+  flex: 1;
+  min-width: 0;
   font-weight: 600;
   font-size: 0.88rem;
   white-space: nowrap;
@@ -249,6 +277,14 @@ body {
   flex-shrink: 0;
   white-space: nowrap;
 }
+
+#btn-manage-source {
+  margin: 0;
+  flex-shrink: 0;
+  color: #344054;
+}
+
+html[data-theme="dark"] #btn-manage-source { color: #e6edf7; }
 
 /* Search bar */
 #search-bar {
@@ -346,6 +382,7 @@ body {
   flex-direction: column;
   overflow: hidden;
   background: var(--pico-background-color);
+  min-width: 0;
 }
 
 #item-detail-empty {
@@ -389,7 +426,7 @@ body {
   font-size: 0.95rem;
   cursor: pointer;
   text-decoration: none;
-  color: var(--pico-color);
+  color: #344054;
   line-height: 1.5;
   margin: 0;
   transition: background 0.1s;
@@ -402,6 +439,32 @@ body {
   background: var(--pico-primary-background);
   color: var(--pico-primary-inverse);
   border-color: var(--pico-primary-background);
+}
+
+html[data-theme="dark"] #detail-toolbar button,
+html[data-theme="dark"] #detail-toolbar a,
+html[data-theme="dark"] #btn-refresh,
+html[data-theme="dark"] #btn-settings {
+  color: #e6edf7;
+}
+
+#btn-refresh,
+#btn-settings { color: #344054; }
+
+#btn-settings svg {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme]) #detail-toolbar button,
+  html:not([data-theme]) #detail-toolbar a,
+  html:not([data-theme]) #btn-refresh,
+  html:not([data-theme]) #btn-settings,
+  html:not([data-theme]) #btn-manage-source {
+    color: #e6edf7;
+  }
 }
 
 #toolbar-spacer { flex: 1; }
@@ -443,7 +506,7 @@ body {
   overflow-y: auto;
   flex: 1;
   line-height: 1.75;
-  font-size: var(--article-font-size, 1rem);
+  font-size: 1rem;
 }
 
 #detail-body img { max-width: 100%; height: auto; display: block; margin: 0.75rem 0; }
@@ -473,8 +536,9 @@ body {
 
 /* ── Modal tweaks ────────────────────────────────────────────── */
 dialog article {
-  max-width: 500px;
+  max-width: 450px;
   margin: auto;
+  font-size: 0.9rem;
 }
 
 /* Add-feed form */
@@ -530,6 +594,7 @@ dialog article {
 #opml-actions { display: flex; gap: 0.5rem; }
 #opml-actions button { margin: 0; }
 
+
 /* kbd hint */
 kbd {
   display: inline-block;
@@ -553,6 +618,7 @@ kbd {
 /* Tablet (≤900px): sidebar + list; detail takes over fullscreen when open */
 @media (max-width: 900px) {
   #app { grid-template-columns: 240px 1fr; }
+  .column-resizer { display: none; }
   #item-detail { display: none; }
 
   #app.show-detail { grid-template-columns: 1fr; }

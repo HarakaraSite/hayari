@@ -15,8 +15,10 @@ const API = (() => {
     if (!res.ok) {
       throw new Error(`${method} ${path} → ${res.status}`);
     }
-    if (res.status === 204) return null;
-    return res.json();
+    // Successful mutation endpoints may intentionally return no body
+    // (for example, refresh returns 202 Accepted while work continues).
+    const responseBody = await res.text();
+    return responseBody ? JSON.parse(responseBody) : null;
   }
 
   // Folders

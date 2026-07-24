@@ -22,7 +22,10 @@ const Keys = (() => {
       e.key,
     ].join('');
 
-    const handler = handlers[key] || handlers[e.key];
+    // Browser and OS shortcuts such as Cmd+R must keep their default behavior.
+    // Only an explicitly registered primary-modifier shortcut may intercept them.
+    const hasPrimaryModifier = e.ctrlKey || e.metaKey || e.altKey;
+    const handler = handlers[key] || (!hasPrimaryModifier && handlers[e.key]);
     if (handler) {
       e.preventDefault();
       handler(e);

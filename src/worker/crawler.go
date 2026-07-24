@@ -23,13 +23,27 @@ type FoundFeed struct {
 
 // FindFeeds attempts to find feed URLs from a web page URL.
 func FindFeeds(pageURL string) ([]FoundFeed, error) {
-	resp, err := crawlerClient.Get(pageURL)
+	return findFeeds(crawlerClient, pageURL)
+}
+
+func findFeeds(client *http.Client, pageURL string) ([]FoundFeed, error) {
+	req, err := http.NewRequest(http.MethodGet, pageURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "yarr2/1.0 (+https://github.com/nkanaev/yarr2)")
+	req.Header.Set("Accept", "text/html, application/xhtml+xml, application/xml;q=0.9, */*;q=0.8")
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, pageURL)
+	}
 
-	return extractFeedLinks(resp.Body, pageURL)
+	return extractFeedLinks(io.LimitReader(resp.Body, 2<<20), pageURL)
 }
 
 func extractFeedLinks(r io.Reader, baseURL string) ([]FoundFeed, error) {

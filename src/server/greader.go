@@ -17,6 +17,10 @@ import (
 // GReader clients re-login on 401, so this only costs one extra round-trip.
 const greaderTokenTTL = 30 * 24 * time.Hour
 
+// FreshRSS exposes its Google Reader-compatible API below this prefix.
+// Keep the original Google Reader routes as well for clients that use them.
+const freshRSSGReaderPrefix = "/api/greader.php"
+
 func generateToken() string {
 	b := make([]byte, 16)
 	rand.Read(b)
@@ -24,6 +28,17 @@ func generateToken() string {
 }
 
 func (s *Server) registerGReaderRoutes(mux *http.ServeMux) {
+	s.registerGReaderHandlers(mux)
+
+	// FreshRSS clients send the same Google Reader requests after
+	// /api/greader.php. Strip only that prefix, then dispatch to the exact same
+	// handlers so both URL forms stay behaviorally identical.
+	freshRSSMux := http.NewServeMux()
+	s.registerGReaderHandlers(freshRSSMux)
+	mux.Handle(freshRSSGReaderPrefix+"/", http.StripPrefix(freshRSSGReaderPrefix, freshRSSMux))
+}
+
+func (s *Server) registerGReaderHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/accounts/ClientLogin", s.greaderLogin)
 
 	gr := s.greaderAuthMiddleware
@@ -438,7 +453,7 @@ func (s *Server) greaderStreamContents(w http.ResponseWriter, r *http.Request) {
 func (s *Server) greaderStreamItemIDs(w http.ResponseWriter, r *http.Request) {
 	streamID := r.URL.Query().Get("s")
 	filter := s.buildStreamFilter(r, streamID)
-	if err := applyContinuation(&filter, r.URL.Query().Get("c")); err != nil {
+	if err := s.applyItemIDContinuation(&filter, r.URL.Query().Get("c")); err != nil {
 		http.Error(w, "invalid continuation", http.StatusBadRequest)
 		return
 	}
@@ -463,12 +478,15 @@ func (s *Server) greaderStreamItemIDs(w http.ResponseWriter, r *http.Request) {
 		if i >= n {
 			break
 		}
-		refs = append(refs, itemRef{ID: fmt.Sprintf("%016x", items[i].ID)})
+		// FreshRSS returns the database entry ID as a decimal string. Clients
+		// such as NetNewsWire convert it to the tagged hexadecimal form when
+		// they subsequently request the entry contents.
+		refs = append(refs, itemRef{ID: strconv.FormatInt(items[i].ID, 10)})
 	}
 
 	resp := map[string]interface{}{"itemRefs": refs}
 	if len(items) > n {
-		resp["continuation"] = encodeContinuation(items[n-1])
+		resp["continuation"] = strconv.FormatInt(items[n-1].ID, 10)
 	}
 	writeJSON(w, resp)
 }
@@ -493,8 +511,11 @@ func (s *Server) greaderStreamItemContents(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, map[string]interface{}{
-		"id":    "user/-/state/com.google/reading-list",
-		"items": entries,
+		// NetNewsWire decodes this endpoint as a Reader API entry wrapper,
+		// where both id and updated are required fields.
+		"id":      "user/-/state/com.google/reading-list",
+		"updated": time.Now().Unix(),
+		"items":   entries,
 	})
 }
 
@@ -688,8 +709,34 @@ func (s *Server) greaderMarkAllAsRead(w http.ResponseWriter, r *http.Request) {
 
 // parseItemID strips the "tag:google.com,2005:reader/item/" prefix and parses the hex ID.
 func parseItemID(raw string) (int64, error) {
-	raw = strings.TrimPrefix(raw, "tag:google.com,2005:reader/item/")
+	const tagPrefix = "tag:google.com,2005:reader/item/"
+	if strings.HasPrefix(raw, tagPrefix) {
+		return strconv.ParseInt(strings.TrimPrefix(raw, tagPrefix), 16, 64)
+	}
+	// FreshRSS accepts decimal IDs directly in stream/items/contents, while
+	// Google Reader clients commonly send the tagged hexadecimal representation.
+	if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		return id, nil
+	}
 	return strconv.ParseInt(raw, 16, 64)
+}
+
+// applyItemIDContinuation resolves FreshRSS's decimal entry-ID continuation
+// into the date-and-ID cursor needed by the storage query.
+func (s *Server) applyItemIDContinuation(filter *storage.ItemFilter, value string) error {
+	if value == "" {
+		return nil
+	}
+	id, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || id < 1 {
+		return fmt.Errorf("invalid continuation")
+	}
+	item, err := s.db.GetItem(id)
+	if err != nil || item == nil {
+		return fmt.Errorf("invalid continuation")
+	}
+	filter.Cursor = &storage.ItemCursor{Date: item.Date, ID: item.ID}
+	return nil
 }
 
 func encodeContinuation(item storage.Item) string {

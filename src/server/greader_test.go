@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -54,8 +55,12 @@ func (s *Server) buildMux() http.Handler {
 
 // login returns an auth token for use in subsequent requests.
 func login(t *testing.T, ts *httptest.Server) string {
+	return loginAt(t, ts, "/accounts/ClientLogin")
+}
+
+func loginAt(t *testing.T, ts *httptest.Server, path string) string {
 	t.Helper()
-	resp, err := http.PostForm(ts.URL+"/accounts/ClientLogin", url.Values{
+	resp, err := http.PostForm(ts.URL+path, url.Values{
 		"Email":  {"user"},
 		"Passwd": {"pass"},
 	})
@@ -161,6 +166,44 @@ func TestGreaderLogin(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if !strings.Contains(string(body), "Auth=") {
 		t.Errorf("response should contain Auth= token, got: %s", string(body))
+	}
+}
+
+func TestFreshRSSGReaderAlias(t *testing.T) {
+	_, ts := newTestServer(t)
+	token := loginAt(t, ts, freshRSSGReaderPrefix+"/accounts/ClientLogin")
+
+	resp := grGet(t, ts, token, freshRSSGReaderPrefix+"/reader/api/0/user-info")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("user-info status = %d, want 200", resp.StatusCode)
+	}
+
+	protectedPaths := []string{
+		"/reader/api/0/token",
+		"/reader/api/0/user-info",
+		"/reader/api/0/subscription/list",
+		"/reader/api/0/subscription/edit",
+		"/reader/api/0/subscription/quickadd",
+		"/reader/api/0/unread-count",
+		"/reader/api/0/tag/list",
+		"/reader/api/0/stream/contents/user/-/state/com.google/reading-list",
+		"/reader/api/0/stream/items/ids",
+		"/reader/api/0/stream/items/contents",
+		"/reader/api/0/edit-tag",
+		"/reader/api/0/mark-all-as-read",
+	}
+	for _, path := range protectedPaths {
+		resp, err := http.Get(ts.URL + freshRSSGReaderPrefix + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		if resp.StatusCode != http.StatusUnauthorized {
+			resp.Body.Close()
+			t.Errorf("%s: status = %d, want 401 (alias should reach the GReader handler)", path, resp.StatusCode)
+			continue
+		}
+		resp.Body.Close()
 	}
 }
 
@@ -611,14 +654,96 @@ func TestGreaderStreamItemIDs(t *testing.T) {
 	if len(result.ItemRefs) != 3 {
 		t.Fatalf("itemRefs count = %d, want 3", len(result.ItemRefs))
 	}
-	// IDs should be hex strings without prefix
+	// FreshRSS returns IDs as decimal strings.
 	for _, ref := range result.ItemRefs {
-		if strings.HasPrefix(ref.ID, "tag:") {
-			t.Errorf("itemRef ID %q should be bare hex, not tag format", ref.ID)
+		if _, err := strconv.ParseInt(ref.ID, 10, 64); err != nil {
+			t.Errorf("itemRef ID %q should be decimal: %v", ref.ID, err)
 		}
-		if len(ref.ID) != 16 {
-			t.Errorf("itemRef ID %q should be 16 hex chars", ref.ID)
+	}
+}
+
+func TestGreaderStreamItemIDsFreshRSSContinuation(t *testing.T) {
+	srv, ts := newTestServer(t)
+	token := loginAt(t, ts, freshRSSGReaderPrefix+"/accounts/ClientLogin")
+	feed := seedFeed(t, srv.db, "https://example.com/feed.xml", "")
+	seedItems(t, srv.db, feed.ID, 5)
+
+	getPage := func(path string) struct {
+		ItemRefs []struct {
+			ID string `json:"id"`
+		} `json:"itemRefs"`
+		Continuation string `json:"continuation"`
+	} {
+		resp := grGet(t, ts, token, freshRSSGReaderPrefix+path)
+		var page struct {
+			ItemRefs []struct {
+				ID string `json:"id"`
+			} `json:"itemRefs"`
+			Continuation string `json:"continuation"`
 		}
+		decodeJSON(t, resp, &page)
+		return page
+	}
+
+	first := getPage("/reader/api/0/stream/items/ids?s=user/-/state/com.google/reading-list&n=2")
+	if len(first.ItemRefs) != 2 || first.Continuation == "" {
+		t.Fatalf("first page = %#v", first)
+	}
+	if _, err := strconv.ParseInt(first.Continuation, 10, 64); err != nil {
+		t.Fatalf("continuation %q should be decimal: %v", first.Continuation, err)
+	}
+
+	second := getPage("/reader/api/0/stream/items/ids?s=user/-/state/com.google/reading-list&n=2&c=" + first.Continuation)
+	if len(second.ItemRefs) != 2 {
+		t.Fatalf("second page count = %d, want 2", len(second.ItemRefs))
+	}
+	if first.ItemRefs[0].ID == second.ItemRefs[0].ID || first.ItemRefs[1].ID == second.ItemRefs[1].ID {
+		t.Error("continuation repeated a prior item")
+	}
+}
+
+func TestFreshRSSGReaderItemContentsForNetNewsWire(t *testing.T) {
+	srv, ts := newTestServer(t)
+	token := loginAt(t, ts, freshRSSGReaderPrefix+"/accounts/ClientLogin")
+
+	feed := seedFeed(t, srv.db, "https://example.com/feed.xml", "")
+	seedItems(t, srv.db, feed.ID, 2)
+
+	idsResponse := grGet(t, ts, token, freshRSSGReaderPrefix+"/reader/api/0/stream/items/ids?s=user/-/state/com.google/reading-list&n=1000&output=json")
+	var ids struct {
+		ItemRefs []struct {
+			ID string `json:"id"`
+		} `json:"itemRefs"`
+	}
+	decodeJSON(t, idsResponse, &ids)
+	if len(ids.ItemRefs) == 0 {
+		t.Fatal("item IDs response is empty")
+	}
+
+	id, err := strconv.ParseInt(ids.ItemRefs[0].ID, 10, 64)
+	if err != nil {
+		t.Fatalf("item reference %q is not decimal: %v", ids.ItemRefs[0].ID, err)
+	}
+	itemID := fmt.Sprintf("tag:google.com,2005:reader/item/%016x", id)
+	contentsResponse := grPost(t, ts, token, freshRSSGReaderPrefix+"/reader/api/0/stream/items/contents", url.Values{
+		"i": {ids.ItemRefs[0].ID, itemID},
+		"T": {"unused-by-yarr2"},
+	})
+	var contents struct {
+		ID      string                   `json:"id"`
+		Updated int64                    `json:"updated"`
+		Items   []map[string]interface{} `json:"items"`
+	}
+	decodeJSON(t, contentsResponse, &contents)
+
+	if contents.ID != "user/-/state/com.google/reading-list" {
+		t.Errorf("response id = %q", contents.ID)
+	}
+	if contents.Updated <= 0 {
+		t.Errorf("updated = %d, want a Unix timestamp", contents.Updated)
+	}
+	if len(contents.Items) != 2 {
+		t.Fatalf("items count = %d, want 2", len(contents.Items))
 	}
 }
 

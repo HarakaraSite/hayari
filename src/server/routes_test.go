@@ -57,6 +57,43 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
+func TestStaticAssetsAreNotCached(t *testing.T) {
+	_, ts := newTestServer(t)
+	for _, path := range []string{"/", "/stylesheets/app.css", "/javascripts/api.js", "/javascripts/key.js", "/javascripts/app.js"} {
+		resp := doRequest(t, ts, http.MethodGet, path, "")
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			t.Fatalf("%s: status = %d, want 200", path, resp.StatusCode)
+		}
+		if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+			resp.Body.Close()
+			t.Errorf("%s: Cache-Control = %q, want no-store", path, got)
+			continue
+		}
+		resp.Body.Close()
+	}
+}
+
+func TestIndexUsesUnversionedLocalAssets(t *testing.T) {
+	_, ts := newTestServer(t)
+	resp := doRequest(t, ts, http.MethodGet, "/", "")
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := string(body)
+	for _, asset := range []string{"/stylesheets/app.css", "/javascripts/api.js", "/javascripts/key.js", "/javascripts/app.js"} {
+		if !strings.Contains(page, asset) {
+			t.Errorf("index does not reference %s", asset)
+		}
+	}
+	if strings.Contains(page, "?v=") {
+		t.Error("index must not use manual asset version query parameters")
+	}
+}
+
 func TestHTTPServerTimeouts(t *testing.T) {
 	srv, _ := newTestServer(t)
 	httpServer := srv.newHTTPServer(http.NewServeMux())
@@ -458,13 +495,23 @@ func TestSettingsPutRejectsAuthSecret(t *testing.T) {
 func TestSettingsPutAllowsWhitelistedKeys(t *testing.T) {
 	srv, ts := newTestServer(t)
 
-	resp := doRequest(t, ts, http.MethodPut, "/api/settings", `{"theme":"dark","font_size":"large","refresh_rate":"30"}`)
+	resp := doRequest(t, ts, http.MethodPut, "/api/settings", `{"theme":"beige","font_size":"large","refresh_rate":"30"}`)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", resp.StatusCode)
 	}
-	if val, _ := srv.db.GetSetting("theme"); val != "dark" {
-		t.Fatalf("theme = %q, want dark", val)
+	if val, _ := srv.db.GetSetting("theme"); val != "beige" {
+		t.Fatalf("theme = %q, want beige", val)
+	}
+
+	resp = doRequest(t, ts, http.MethodGet, "/api/settings", "")
+	defer resp.Body.Close()
+	var settings map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&settings); err != nil {
+		t.Fatal(err)
+	}
+	if settings["theme"] != "beige" {
+		t.Fatalf("returned theme = %q, want beige", settings["theme"])
 	}
 }
 
