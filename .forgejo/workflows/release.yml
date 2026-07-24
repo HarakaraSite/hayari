@@ -24,7 +24,7 @@ jobs:
         id: test
         run: |
           set -euo pipefail
-          { go test -race ./...; } 2>&1 | tee test.log
+          { CGO_ENABLED=1 go test -race ./...; } 2>&1 | tee test.log
 
       - name: Vet
         id: vet
