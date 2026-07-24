@@ -198,3 +198,19 @@
 
 ### 連絡・注意事項
 - 現在の名称移行・リリース準備の変更は未コミットかつ未 push。リポジトリの public 化、タグ、Release は未実施。
+
+## 2026-07-24 20:02 JST
+
+- 実行エージェント: Codex
+- モデル: 不明
+- 作業トピック: Hayari 初回 private push
+
+### 実施したこと
+- Hayari 名称移行とリリース計画を commit `63aa075`（`Rename application to Hayari`）にまとめ、private の `origin/main` へ push した。
+- ローカルと `origin/main` の SHA が `63aa075149d6bd48d57c376c5d232af30f55a045` で一致することを確認した。
+
+### 次のタスク候補
+- private 常用環境で候補を確認し、認証設定、公開用ドキュメント、Forgejo Actions リリース workflow を計画順に実装する。
+
+### 連絡・注意事項
+- リポジトリの public 化、タグ、Release は未実施。常用確認後に明示的な判断を得る。
