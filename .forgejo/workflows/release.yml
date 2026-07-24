@@ -121,7 +121,7 @@ jobs:
           go run /tmp/ci-failure-summary.go > dist/ci-failure-summary.json
 
       - name: Upload release
-        if: success()
+        if: always()
         uses: actions/forgejo-release@v2
         with:
           direction: upload
