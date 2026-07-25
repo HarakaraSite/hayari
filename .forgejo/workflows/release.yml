@@ -1,4 +1,4 @@
-# Rendered from .forgejo/release-profile.yml.
+# Based on .forgejo/release-profile.yml.
 name: release
 
 on:
@@ -37,6 +37,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
+          # Use a fresh module cache for cross-compilation. This avoids a
+          # runner-local extracted module cache from contaminating a target
+          # platform build.
+          export GOMODCACHE="$(mktemp -d)"
           LDFLAGS='-s -w -X main.Version=${{ forgejo.ref_name }}'
           {
             CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o dist/hayari-darwin-amd64 ./cmd/hayari
