@@ -21,6 +21,24 @@ Engadget feed is selected with an article open.
 
 ![Hayari showing the Engadget feed and an article](docs/images/hayari-engadget.png)
 
+## Keyboard shortcuts
+
+| Key | Action |
+| --- | --- |
+| `j` / `k` | Select the next / previous article |
+| `l` / `h` | Select the next / previous feed or folder |
+| `o` | Open the selected article in the browser |
+| `r` | Toggle the selected article's read state |
+| `s` | Toggle the selected article's star |
+| `i` | Toggle readability mode |
+| `q` | Close the article pane |
+| `f` / `b` | Scroll the article down / up |
+| `/` | Focus search |
+| `Shift+R` | Mark all articles in the current view as read |
+| `1` / `2` / `3` | Switch to Unread / Starred / All |
+
+Shortcuts are disabled while typing in an input field or while a dialog is open.
+
 ## Building
 
 ```sh
