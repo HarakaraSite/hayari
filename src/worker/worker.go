@@ -14,9 +14,9 @@ import (
 )
 
 const (
-	defaultInterval  = 30 * time.Minute
-	cleanupInterval  = 24 * time.Hour
-	concurrentFeeds  = 5
+	defaultInterval = 30 * time.Minute
+	cleanupInterval = 24 * time.Hour
+	concurrentFeeds = 5
 )
 
 type Worker struct {
@@ -184,7 +184,7 @@ func (w *Worker) refreshFeed(feed storage.Feed) {
 		if pi.Image != "" {
 			item.Image = &pi.Image
 		}
-		item.Status = applyFilters(item, filters)
+		item.Status, item.Hidden = applyFilters(item, filters)
 		items = append(items, item)
 	}
 
@@ -206,8 +206,9 @@ func (w *Worker) fetchAndStoreFavicon(feedID int64, siteURL string) {
 	w.db.UpdateFeedIcon(feedID, &dataURL)
 }
 
-// applyFilters returns the status the item should have based on filter rules.
-func applyFilters(item storage.Item, filters []storage.Filter) string {
+// applyFilters returns the status and hidden state the item should have based
+// on the existing generic filter rules.
+func applyFilters(item storage.Item, filters []storage.Filter) (string, bool) {
 	for _, f := range filters {
 		var field string
 		switch f.Field {
@@ -228,10 +229,10 @@ func applyFilters(item storage.Item, filters []storage.Filter) string {
 
 		switch f.Action {
 		case "mark_read":
-			return "read"
+			return "read", false
 		case "hide":
-			return "read"
+			return "unread", true
 		}
 	}
-	return "unread"
+	return "unread", false
 }

@@ -21,6 +21,10 @@ import (
 
 func (s *Server) registerRoutes(mux *http.ServeMux) {
 	fs := http.FileServer(http.FS(assets.FS))
+	mux.HandleFunc("/favicon.svg", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=604800")
+		http.ServeFileFS(w, r, assets.FS, "favicon.svg")
+	})
 
 	auth := s.authMiddleware
 
@@ -65,7 +69,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Settings
 	mux.HandleFunc("/api/settings", auth(s.handleSettings))
 
-	// Stats (per-feed unread counts)
+	// Stats (per-feed unread and starred counts)
 	mux.HandleFunc("/api/stats", auth(s.handleStats))
 
 	// OPML
@@ -194,7 +198,14 @@ func (s *Server) handleFeeds(w http.ResponseWriter, r *http.Request) {
 			httpError(w, err, 500)
 			return
 		}
-		go s.worker.RefreshFeed(feed.ID)
+		// Wait for the initial refresh so the client can immediately select the
+		// newly added feed and show its articles.
+		s.worker.RefreshFeed(feed.ID)
+		feed, err = s.db.GetFeed(feed.ID)
+		if err != nil {
+			httpError(w, err, 500)
+			return
+		}
 		writeJSON(w, feed)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -225,8 +236,9 @@ func (s *Server) handleFeed(w http.ResponseWriter, r *http.Request) {
 		// folder_id uses RawMessage to distinguish "key absent" (keep current
 		// folder) from explicit null (move out of folder).
 		var body struct {
-			Title    *string         `json:"title"`
-			FolderID json.RawMessage `json:"folder_id"`
+			Title               *string         `json:"title"`
+			FolderID            json.RawMessage `json:"folder_id"`
+			TitleFilterKeywords *string         `json:"title_filter_keywords"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			httpError(w, err, 400)
@@ -234,6 +246,12 @@ func (s *Server) handleFeed(w http.ResponseWriter, r *http.Request) {
 		}
 		if body.Title != nil {
 			if err := s.db.UpdateFeed(id, body.Title, nil); err != nil {
+				httpError(w, err, 500)
+				return
+			}
+		}
+		if body.TitleFilterKeywords != nil {
+			if err := s.db.UpdateFeedTitleFilterKeywords(id, *body.TitleFilterKeywords); err != nil {
 				httpError(w, err, 500)
 				return
 			}
@@ -563,7 +581,16 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	for _, st := range stats {
 		unread[st.FeedID] = st.Count
 	}
-	writeJSON(w, map[string]interface{}{"unread": unread})
+	starredStats, err := s.db.GetStarredCountsByFeed()
+	if err != nil {
+		httpError(w, err, 500)
+		return
+	}
+	starred := make(map[int64]int64, len(starredStats))
+	for _, st := range starredStats {
+		starred[st.FeedID] = st.Count
+	}
+	writeJSON(w, map[string]interface{}{"unread": unread, "starred": starred})
 }
 
 // --- Page (article fetch for Readability mode) ---

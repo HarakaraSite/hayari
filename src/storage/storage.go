@@ -4,9 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
-	"strings"
 
-	"golang.org/x/net/html"
 	_ "modernc.org/sqlite"
 )
 
@@ -44,21 +42,4 @@ func (s *Storage) Close() error {
 // Ping verifies that the database remains reachable.
 func (s *Storage) Ping() error {
 	return s.db.Ping()
-}
-
-// stripHTML extracts plain text from an HTML string for FTS indexing.
-func stripHTML(src string) string {
-	z := html.NewTokenizer(strings.NewReader(src))
-	var b strings.Builder
-	for {
-		tt := z.Next()
-		if tt == html.ErrorToken {
-			break
-		}
-		if tt == html.TextToken {
-			b.Write(z.Text())
-			b.WriteByte(' ')
-		}
-	}
-	return strings.TrimSpace(b.String())
 }

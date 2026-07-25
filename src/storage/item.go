@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 type Item struct {
@@ -18,6 +19,7 @@ type Item struct {
 	Status  string    `json:"status"`
 	Starred bool      `json:"starred"`
 	Image   *string   `json:"image"`
+	Hidden  bool      `json:"-"`
 }
 
 type ItemFilter struct {
@@ -40,7 +42,7 @@ type ItemCursor struct {
 
 // where builds the WHERE clause for non-search filters.
 func (f ItemFilter) where() (string, []interface{}) {
-	var clauses []string
+	clauses := []string{"i.hidden = 0"}
 	var args []interface{}
 
 	if f.Status != "" {
@@ -87,24 +89,13 @@ func (f ItemFilter) where() (string, []interface{}) {
 }
 
 const itemSelect = `
-	SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.date, i.content, i.author, i.status, i.starred, i.image
+	SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.date, i.content, i.author, i.status, i.starred, i.image, i.hidden
 	FROM items i
 	JOIN feeds f ON f.id = i.feed_id`
 
 func (s *Storage) buildItemQuery(filter ItemFilter, suffix string) (string, []interface{}) {
 	where, args := filter.where()
-
-	ftsJoin := ""
-	if filter.Search != "" {
-		ftsJoin = "JOIN search ON search.rowid = i.id"
-		ftsClause := "search MATCH ?"
-		if where == "" {
-			where = "WHERE " + ftsClause
-		} else {
-			where += " AND " + ftsClause
-		}
-		args = append(args, filter.Search)
-	}
+	where, args, ftsJoin := applySearchFilter(where, args, filter.Search)
 
 	query := fmt.Sprintf("%s\n%s\n%s\n%s", itemSelect, ftsJoin, where, suffix)
 	return query, args
@@ -128,7 +119,7 @@ func (s *Storage) ListItems(filter ItemFilter, limit, offset int) ([]Item, error
 	for rows.Next() {
 		var item Item
 		if err := rows.Scan(&item.ID, &item.FeedID, &item.GUID, &item.Title, &item.Link,
-			&item.Date, &item.Content, &item.Author, &item.Status, &item.Starred, &item.Image); err != nil {
+			&item.Date, &item.Content, &item.Author, &item.Status, &item.Starred, &item.Image, &item.Hidden); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -138,18 +129,7 @@ func (s *Storage) ListItems(filter ItemFilter, limit, offset int) ([]Item, error
 
 func (s *Storage) CountItems(filter ItemFilter) (int64, error) {
 	where, args := filter.where()
-
-	ftsJoin := ""
-	if filter.Search != "" {
-		ftsJoin = "JOIN search ON search.rowid = i.id"
-		ftsClause := "search MATCH ?"
-		if where == "" {
-			where = "WHERE " + ftsClause
-		} else {
-			where += " AND " + ftsClause
-		}
-		args = append(args, filter.Search)
-	}
+	where, args, ftsJoin := applySearchFilter(where, args, filter.Search)
 
 	query := fmt.Sprintf(`
 		SELECT COUNT(*)
@@ -166,10 +146,10 @@ func (s *Storage) CountItems(filter ItemFilter) (int64, error) {
 func (s *Storage) GetItem(id int64) (*Item, error) {
 	item := &Item{}
 	err := s.db.QueryRow(`
-		SELECT id, feed_id, guid, title, link, date, content, author, status, starred, image
-		FROM items WHERE id = ?`, id).
+		SELECT id, feed_id, guid, title, link, date, content, author, status, starred, image, hidden
+		FROM items WHERE id = ? AND hidden = 0`, id).
 		Scan(&item.ID, &item.FeedID, &item.GUID, &item.Title, &item.Link,
-			&item.Date, &item.Content, &item.Author, &item.Status, &item.Starred, &item.Image)
+			&item.Date, &item.Content, &item.Author, &item.Status, &item.Starred, &item.Image, &item.Hidden)
 	if err != nil {
 		return nil, err
 	}
@@ -184,27 +164,36 @@ func (s *Storage) CreateItems(items []Item) error {
 	defer tx.Rollback()
 
 	insertItem, err := tx.Prepare(`
-		INSERT INTO items (feed_id, guid, title, link, date, content, author, image, status)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO items (feed_id, guid, title, link, date, content, author, image, status, hidden)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(feed_id, guid) DO NOTHING`)
 	if err != nil {
 		return err
 	}
 	defer insertItem.Close()
 
-	insertSearch, err := tx.Prepare(`INSERT INTO search(rowid, title, body) VALUES (?, ?, ?)`)
+	insertSearch, err := tx.Prepare(`INSERT INTO search(rowid, title) VALUES (?, ?)`)
 	if err != nil {
 		return err
 	}
 	defer insertSearch.Close()
+	keywordsByFeed := make(map[int64]string)
 
 	for _, item := range items {
+		keywords, ok := keywordsByFeed[item.FeedID]
+		if !ok {
+			if err := tx.QueryRow(`SELECT title_filter_keywords FROM feeds WHERE id = ?`, item.FeedID).Scan(&keywords); err != nil {
+				return err
+			}
+			keywordsByFeed[item.FeedID] = keywords
+		}
+		item.Hidden = item.Hidden || TitleMatchesFilter(item.Title, keywords)
 		status := item.Status
 		if status == "" {
 			status = "unread"
 		}
 		res, err := insertItem.Exec(item.FeedID, item.GUID, item.Title, item.Link,
-			item.Date.UTC().Format(time.RFC3339Nano), item.Content, item.Author, item.Image, status)
+			item.Date.UTC().Format(time.RFC3339Nano), item.Content, item.Author, item.Image, status, item.Hidden)
 		if err != nil {
 			return err
 		}
@@ -214,11 +203,37 @@ func (s *Storage) CreateItems(items []Item) error {
 			continue
 		}
 		id, _ := res.LastInsertId()
-		if _, err := insertSearch.Exec(id, item.Title, stripHTML(item.Content)); err != nil {
+		if _, err := insertSearch.Exec(id, item.Title); err != nil {
 			return err
 		}
 	}
 	return tx.Commit()
+}
+
+// applySearchFilter searches article titles only. The trigram FTS index covers
+// literal substring queries of three or more characters; short queries fall
+// back to a title-only scan because trigram cannot index them.
+func applySearchFilter(where string, args []interface{}, search string) (string, []interface{}, string) {
+	if search == "" {
+		return where, args, ""
+	}
+
+	clause := ""
+	ftsJoin := ""
+	if utf8.RuneCountInString(search) < 3 {
+		clause = "instr(i.title, ?) > 0"
+		args = append(args, search)
+	} else {
+		ftsJoin = "JOIN search ON search.rowid = i.id"
+		clause = "search MATCH ?"
+		args = append(args, `"`+strings.ReplaceAll(search, `"`, `""`)+`"`)
+	}
+	if where == "" {
+		where = "WHERE " + clause
+	} else {
+		where += " AND " + clause
+	}
+	return where, args, ftsJoin
 }
 
 func (s *Storage) UpdateItemStatus(id int64, status string) error {
@@ -263,12 +278,18 @@ type FeedUnreadStat struct {
 	NewestDate time.Time
 }
 
+// FeedCount holds an item count for a feed.
+type FeedCount struct {
+	FeedID int64
+	Count  int64
+}
+
 // GetUnreadCountsByFeed returns unread count and newest unread item date per feed in a single query.
 func (s *Storage) GetUnreadCountsByFeed() ([]FeedUnreadStat, error) {
 	rows, err := s.db.Query(`
 		SELECT feed_id, COUNT(*), MAX(date)
 		FROM items
-		WHERE status = 'unread'
+		WHERE status = 'unread' AND hidden = 0
 		GROUP BY feed_id`)
 	if err != nil {
 		return nil, err
@@ -291,6 +312,29 @@ func (s *Storage) GetUnreadCountsByFeed() ([]FeedUnreadStat, error) {
 			Count:      count,
 			NewestDate: newestDate,
 		})
+	}
+	return stats, rows.Err()
+}
+
+// GetStarredCountsByFeed returns the number of starred items for each feed.
+func (s *Storage) GetStarredCountsByFeed() ([]FeedCount, error) {
+	rows, err := s.db.Query(`
+		SELECT feed_id, COUNT(*)
+		FROM items
+		WHERE starred = 1 AND hidden = 0
+		GROUP BY feed_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stats []FeedCount
+	for rows.Next() {
+		var stat FeedCount
+		if err := rows.Scan(&stat.FeedID, &stat.Count); err != nil {
+			return nil, err
+		}
+		stats = append(stats, stat)
 	}
 	return stats, rows.Err()
 }

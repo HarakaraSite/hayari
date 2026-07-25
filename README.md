@@ -8,8 +8,14 @@ A self-hosted RSS aggregator written in Go with a vanilla JS frontend.
 - SQLite database (no external DB required)
 - Desktop tray icon support (build with `gui` tag)
 - FreshRSS / Google Reader API compatible
-- Article filter rules (keyword, author, content)
+- Per-feed title keyword exclusions (literal substring match)
 - Pico CSS based lightweight UI
+
+## Screenshot
+
+Feeds, unread counts, article list, and reading pane after adding feeds.
+
+![Hayari showing registered feeds and an article](docs/images/page-2026-07-25T07-56-49-032Z.png)
 
 ## Building
 

@@ -8,6 +8,7 @@ const App = (() => {
     feeds:       [],
     folders:     [],
     feedStats:   {},     // feedId(string) → unread count
+    starStats:   {},     // feedId(string) → starred item count
     filter:      'unread', // 'unread' | 'starred' | 'all'
     sourceType:  'all',   // 'all' | 'feed' | 'folder'
     sourceId:    null,
@@ -22,6 +23,7 @@ const App = (() => {
   };
 
   const PAGE_SIZE = 40;
+  const MAX_UNREAD_BADGE_COUNT = 999;
 
   // ── DOM refs ───────────────────────────────────────────────────
   const $ = (sel) => document.querySelector(sel);
@@ -106,6 +108,7 @@ const App = (() => {
     state.feeds    = feeds   || [];
     state.folders  = folders || [];
     state.feedStats = (stats && stats.unread) || {};
+    state.starStats = (stats && stats.starred) || {};
     renderSidebar();
   }
 
@@ -127,7 +130,9 @@ const App = (() => {
     // Render folders
     state.folders.forEach(folder => {
       const folderFeeds = byFolder[folder.id] || [];
-      const folderUnread = folderFeeds.reduce((sum, f) => sum + (state.feedStats[f.id] || 0), 0);
+      const visibleFolderFeeds = visibleSidebarFeeds(folderFeeds);
+      if ((state.filter === 'unread' || state.filter === 'starred') && visibleFolderFeeds.length === 0) return;
+      const folderCount = sidebarCount(folderFeeds);
       const isActive = state.sourceType === 'folder' && state.sourceId === folder.id;
       const isOpen   = folder.is_expanded;
 
@@ -139,14 +144,14 @@ const App = (() => {
       header.className = 'folder-header' + (isActive ? ' active' : '');
       header.innerHTML =
         `<span class="folder-toggle${isOpen ? ' open' : ''}">&#x25b6;</span>` +
-        `<span class="folder-name">${escHTML(folder.title)}</span>` +
-        (folderUnread ? `<span class="unread-badge">${folderUnread}</span>` : '');
+        `<span class="folder-name">${escHTML(folder.title)}</span>`;
+      appendCountBadge(header, folderCount);
 
       // Folder feed list (collapsible)
       const feedsUl = document.createElement('ul');
       feedsUl.className = 'folder-feeds';
       feedsUl.hidden = !isOpen;
-      folderFeeds.forEach(feed => {
+      visibleFolderFeeds.forEach(feed => {
         feedsUl.appendChild(makeFeedLi(feed));
       });
 
@@ -171,15 +176,65 @@ const App = (() => {
     });
 
     // Render unfoldered feeds
-    unfoldered.forEach(feed => {
+    visibleSidebarFeeds(unfoldered).forEach(feed => {
       feedList.appendChild(makeFeedLi(feed));
     });
 
     updateActiveSidebarItem();
   }
 
+  function visibleSidebarFeeds(feeds) {
+    if (state.filter === 'unread') {
+      return feeds.filter(feed => (state.feedStats[feed.id] || 0) > 0);
+    }
+    if (state.filter === 'starred') {
+      return feeds.filter(feed => (state.starStats[feed.id] || 0) > 0);
+    }
+    return feeds;
+  }
+
+  function sidebarCount(feeds) {
+    if (state.filter === 'unread') {
+      return feeds.reduce((sum, feed) => sum + (state.feedStats[feed.id] || 0), 0);
+    }
+    if (state.filter === 'starred') {
+      return feeds.reduce((sum, feed) => sum + (state.starStats[feed.id] || 0), 0);
+    }
+    return 0;
+  }
+
+  function sidebarFeedCount(feed) {
+    if (state.filter === 'unread') return state.feedStats[feed.id] || 0;
+    if (state.filter === 'starred') return state.starStats[feed.id] || 0;
+    return 0;
+  }
+
+  function ensureVisibleSource() {
+    if (state.filter !== 'unread' && state.filter !== 'starred') return false;
+
+    const stats = state.filter === 'unread' ? state.feedStats : state.starStats;
+
+    let hidden = false;
+    if (state.sourceType === 'feed') {
+      const feed = state.feeds.find(f => f.id === state.sourceId);
+      hidden = !feed || (stats[feed.id] || 0) === 0;
+    } else if (state.sourceType === 'folder') {
+      const count = state.feeds
+        .filter(f => f.folder_id === state.sourceId)
+        .reduce((sum, f) => sum + (stats[f.id] || 0), 0);
+      hidden = count === 0;
+    }
+    if (!hidden) return false;
+
+    state.sourceType = 'all';
+    state.sourceId = null;
+    itemListTitle.textContent = state.filter === 'unread' ? 'Unread' : 'Starred';
+    btnManageSource.hidden = true;
+    return true;
+  }
+
   function makeFeedLi(feed) {
-    const unread = state.feedStats[feed.id] || 0;
+    const count = sidebarFeedCount(feed);
     const isActive = state.sourceType === 'feed' && state.sourceId === feed.id;
 
     const li = document.createElement('li');
@@ -197,10 +252,8 @@ const App = (() => {
     img.onerror = () => { img.style.display = 'none'; };
 
     row.appendChild(img);
-    row.insertAdjacentHTML('beforeend',
-      `<span class="feed-name">${escHTML(feed.title || feed.feed_url)}</span>` +
-      (unread ? `<span class="unread-badge">${unread}</span>` : '')
-    );
+    row.insertAdjacentHTML('beforeend', `<span class="feed-name">${escHTML(feed.title || feed.feed_url)}</span>`);
+    appendCountBadge(row, count);
 
     row.addEventListener('click', () => selectSource('feed', feed.id, feed.title || feed.feed_url));
 
@@ -208,39 +261,29 @@ const App = (() => {
     return li;
   }
 
-  // Update unread badges for one feed (and its folder) without rebuilding
-  // the sidebar DOM — a full renderSidebar() per article open causes churn
-  // and favicon flicker.
-  function refreshBadges(feedId) {
-    setBadge(
-      feedList.querySelector(`li[data-feed-id="${feedId}"] .feed-row`),
-      state.feedStats[feedId] || 0
-    );
-    const feed = state.feeds.find(f => f.id === feedId);
-    if (feed && feed.folder_id) {
-      const sum = state.feeds
-        .filter(f => f.folder_id === feed.folder_id)
-        .reduce((acc, f) => acc + (state.feedStats[f.id] || 0), 0);
-      setBadge(
-        feedList.querySelector(`li[data-folder-id="${feed.folder_id}"] .folder-header`),
-        sum
-      );
+  // Reading state changes only affect Unread badges. A full sidebar render
+  // keeps the hidden-feed rule in sync without showing counts in All/Starred.
+  function refreshBadges() {
+    if (state.filter === 'unread') {
+      const resetSource = ensureVisibleSource();
+      renderSidebar();
+      if (resetSource) loadItems(true);
     }
   }
 
-  function setBadge(row, count) {
-    if (!row) return;
-    let badge = row.querySelector('.unread-badge');
-    if (count > 0) {
-      if (!badge) {
-        badge = document.createElement('span');
-        badge.className = 'unread-badge';
-        row.appendChild(badge);
-      }
-      badge.textContent = count;
-    } else if (badge) {
-      badge.remove();
-    }
+  function appendCountBadge(row, count) {
+    if (count <= 0) return;
+    const badge = document.createElement('span');
+    badge.className = 'sidebar-count-badge';
+    updateCountBadge(badge, count);
+    row.appendChild(badge);
+  }
+
+  function updateCountBadge(badge, count) {
+    badge.textContent = count > MAX_UNREAD_BADGE_COUNT ? `${MAX_UNREAD_BADGE_COUNT}+` : String(count);
+    const label = state.filter === 'starred' ? 'starred items' : 'unread items';
+    badge.setAttribute('aria-label', `${count} ${label}`);
+    badge.title = `${count} ${label}`;
   }
 
   function updateActiveSidebarItem() {
@@ -261,11 +304,12 @@ const App = (() => {
     btnManageSource.hidden = (type === 'all');
     updateActiveSidebarItem();
     appEl.classList.remove('show-sidebar'); // mobile: back to the list pane
-    loadItems(true);
+    return loadItems(true);
   }
 
   function selectFilter(filter) {
     state.filter = filter;
+    ensureVisibleSource();
     // Update tab highlight
     document.querySelectorAll('#status-tabs button').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.filter === filter);
@@ -279,7 +323,8 @@ const App = (() => {
     // Show mark-all-read only in unread view
     btnMarkAllRead.hidden = (filter !== 'unread');
     appEl.classList.remove('show-sidebar'); // mobile: back to the list pane
-    loadItems(true);
+    renderSidebar();
+    return loadItems(true);
   }
 
   // ── Item list ──────────────────────────────────────────────────
@@ -378,13 +423,19 @@ const App = (() => {
 
     // Mark read on open
     if (item.status === 'unread') {
+      try {
+        await API.updateItem(item.id, { status: 'read' });
+      } catch (err) {
+        console.error('mark item read:', err);
+        showDetail(item);
+        return;
+      }
       item.status = 'read';
       if (li) li.classList.remove('unread');
-      API.updateItem(item.id, { status: 'read' });
       // Update stats badge
       if (state.feedStats[item.feed_id] > 0) {
         state.feedStats[item.feed_id]--;
-        refreshBadges(item.feed_id);
+        refreshBadges();
       }
     }
 
@@ -441,7 +492,19 @@ const App = (() => {
 
     // Body
     detailBody.innerHTML = item.content || '<p><em>No content.</em></p>';
+    prepareArticleLinks(detailBody);
     detailBody.scrollTop = 0;
+  }
+
+  function prepareArticleLinks(container) {
+    container.querySelectorAll('a[href]').forEach(link => {
+      if (link.getAttribute('href').startsWith('#')) return;
+      const rel = new Set(link.rel.split(/\s+/).filter(Boolean));
+      rel.add('noopener');
+      rel.add('noreferrer');
+      link.target = '_blank';
+      link.rel = [...rel].join(' ');
+    });
   }
 
   function updateDetailToolbar(item) {
@@ -482,6 +545,13 @@ const App = (() => {
     }
 
     updateDetailToolbar(item);
+    state.starStats[item.feed_id] = Math.max(0, (state.starStats[item.feed_id] || 0) + (newStarred ? 1 : -1));
+
+    if (state.filter === 'starred') {
+      ensureVisibleSource();
+      renderSidebar();
+      await loadItems(true);
+    }
   }
 
   async function toggleRead() {
@@ -493,8 +563,14 @@ const App = (() => {
 
   async function setItemStatus(item, status) {
     const old = item.status;
+    if (old === status) return;
+    try {
+      await API.updateItem(item.id, { status });
+    } catch (err) {
+      console.error('set item status:', err);
+      return;
+    }
     item.status = status;
-    await API.updateItem(item.id, { status });
 
     // Update list item CSS
     const li = itemList.querySelector(`[data-item-id="${item.id}"]`);
@@ -509,7 +585,7 @@ const App = (() => {
     const delta = (status === 'unread' ? 1 : 0) - (old === 'unread' ? 1 : 0);
     if (delta !== 0) {
       state.feedStats[item.feed_id] = Math.max(0, (state.feedStats[item.feed_id] || 0) + delta);
-      refreshBadges(item.feed_id);
+      refreshBadges();
     }
   }
 
@@ -629,10 +705,14 @@ const App = (() => {
   async function subscribeFeed(url, folderID) {
     btnFeedSubmit.setAttribute('aria-busy', 'true');
     try {
-      await API.createFeed(url, folderID);
+      const feed = await API.createFeed(url, folderID);
       modalAddFeed.close();
       await loadSidebar();
-      await loadItems(true);
+		if ((state.filter === 'unread' && (state.feedStats[feed.id] || 0) === 0) ||
+		    (state.filter === 'starred' && (state.starStats[feed.id] || 0) === 0)) {
+		  await selectFilter('all');
+		}
+		selectSource('feed', feed.id, feed.title || feed.feed_url);
     } catch (err) {
       alert('Error: ' + err.message);
     } finally {
@@ -661,6 +741,10 @@ const App = (() => {
             ${folderOptions}
           </select>
         </label>
+		<label>Hide articles with title keywords
+		  <input type="text" name="title_filter_keywords" value="${encHTML(feed.title_filter_keywords || '')}" />
+		  <small>Comma-separated keywords. Articles whose titles contain any keyword are hidden when fetched.</small>
+		</label>
         <div class="manage-footer">
           <button type="button" class="btn-danger" id="btn-do-delete-feed">Delete</button>
           <button type="submit">Save</button>
@@ -673,9 +757,11 @@ const App = (() => {
       const payload = {};
       if (data.title) payload.title = data.title;
       payload.folder_id = data.folder_id ? +data.folder_id : null;
+		payload.title_filter_keywords = data.title_filter_keywords;
       await API.updateFeed(feedId, payload);
       modalManage.close();
       await loadSidebar();
+		await loadItems(true);
     });
 
     modalManageBody.querySelector('#btn-do-delete-feed').addEventListener('click', async () => {
@@ -754,12 +840,15 @@ const App = (() => {
   function buildSourceList() {
     const list = [{ type: 'all', id: null, name: 'All' }];
     state.folders.forEach(folder => {
+      const folderFeeds = state.feeds.filter(f => f.folder_id === folder.id);
+      const visibleFolderFeeds = visibleSidebarFeeds(folderFeeds);
+      if ((state.filter === 'unread' || state.filter === 'starred') && visibleFolderFeeds.length === 0) return;
       list.push({ type: 'folder', id: folder.id, name: folder.title });
-      state.feeds.filter(f => f.folder_id === folder.id).forEach(feed => {
+      visibleFolderFeeds.forEach(feed => {
         list.push({ type: 'feed', id: feed.id, name: feed.title || feed.feed_url });
       });
     });
-    state.feeds.filter(f => !f.folder_id).forEach(feed => {
+    visibleSidebarFeeds(state.feeds.filter(f => !f.folder_id)).forEach(feed => {
       list.push({ type: 'feed', id: feed.id, name: feed.title || feed.feed_url });
     });
     return list;
@@ -783,6 +872,8 @@ const App = (() => {
     // Refresh stats and items
     const stats = await API.getStats();
     state.feedStats = (stats && stats.unread) || {};
+    state.starStats = (stats && stats.starred) || {};
+    ensureVisibleSource();
     renderSidebar();
     await loadItems(true);
   }

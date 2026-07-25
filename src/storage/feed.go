@@ -1,26 +1,30 @@
 package storage
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type Feed struct {
-	ID            int64      `json:"id"`
-	FolderID      *int64     `json:"folder_id"`
-	Title         string     `json:"title"`
-	FeedURL       string     `json:"feed_url"`
-	SiteURL       string     `json:"site_url"`
-	Icon          *string    `json:"icon"`
-	LastRefreshed *time.Time `json:"last_refreshed"`
-	LastError     *string    `json:"last_error,omitempty"`
-	LastModified  *string    `json:"-"`
-	ETag          *string    `json:"-"`
+	ID                  int64      `json:"id"`
+	FolderID            *int64     `json:"folder_id"`
+	Title               string     `json:"title"`
+	FeedURL             string     `json:"feed_url"`
+	SiteURL             string     `json:"site_url"`
+	Icon                *string    `json:"icon"`
+	LastRefreshed       *time.Time `json:"last_refreshed"`
+	LastError           *string    `json:"last_error,omitempty"`
+	LastModified        *string    `json:"-"`
+	ETag                *string    `json:"-"`
+	TitleFilterKeywords string     `json:"title_filter_keywords"`
 }
 
-const feedColumns = `id, folder_id, title, feed_url, site_url, icon, last_refreshed, last_error, last_modified, etag`
+const feedColumns = `id, folder_id, title, feed_url, site_url, icon, last_refreshed, last_error, last_modified, etag, title_filter_keywords`
 
 func scanFeed(row interface{ Scan(...any) error }, f *Feed) error {
 	return row.Scan(
 		&f.ID, &f.FolderID, &f.Title, &f.FeedURL, &f.SiteURL, &f.Icon,
-		&f.LastRefreshed, &f.LastError, &f.LastModified, &f.ETag,
+		&f.LastRefreshed, &f.LastError, &f.LastModified, &f.ETag, &f.TitleFilterKeywords,
 	)
 }
 
@@ -82,6 +86,89 @@ func (s *Storage) UpdateFeed(id int64, title *string, folderID *int64) error {
 			folder_id = COALESCE(?, folder_id)
 		WHERE id = ?`, title, folderID, id)
 	return err
+}
+
+// UpdateFeedTitleFilterKeywords replaces the comma-separated, literal title
+// keywords for one feed. Empty entries and surrounding whitespace are removed.
+func (s *Storage) UpdateFeedTitleFilterKeywords(id int64, keywords string) error {
+	keywords = normalizeTitleFilterKeywords(keywords)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`UPDATE feeds SET title_filter_keywords = ? WHERE id = ?`, keywords, id); err != nil {
+		return err
+	}
+	rows, err := tx.Query(`SELECT id, title FROM items WHERE feed_id = ?`, id)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	update, err := tx.Prepare(`UPDATE items SET hidden = ? WHERE id = ?`)
+	if err != nil {
+		return err
+	}
+	defer update.Close()
+	for rows.Next() {
+		var itemID int64
+		var title string
+		if err := rows.Scan(&itemID, &title); err != nil {
+			return err
+		}
+		if _, err := update.Exec(TitleMatchesFilter(title, keywords), itemID); err != nil {
+			return err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// reapplyTitleFilterKeywords updates existing rows when the hidden-item column
+// is first introduced by migration. Normal edits use UpdateFeedTitleFilterKeywords.
+func (s *Storage) reapplyTitleFilterKeywords() error {
+	feeds, err := s.ListFeeds()
+	if err != nil {
+		return err
+	}
+	for _, feed := range feeds {
+		if err := s.UpdateFeedTitleFilterKeywords(feed.ID, feed.TitleFilterKeywords); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func normalizeTitleFilterKeywords(keywords string) string {
+	seen := make(map[string]struct{})
+	var terms []string
+	for _, term := range strings.Split(keywords, ",") {
+		term = strings.TrimSpace(term)
+		if term == "" {
+			continue
+		}
+		key := strings.ToLower(term)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		terms = append(terms, term)
+	}
+	return strings.Join(terms, ",")
+}
+
+// TitleMatchesFilter reports whether title contains any configured keyword.
+// Matching is literal, case-insensitive, and uses OR semantics.
+func TitleMatchesFilter(title, keywords string) bool {
+	title = strings.ToLower(title)
+	for _, term := range strings.Split(keywords, ",") {
+		if term = strings.TrimSpace(term); term != "" && strings.Contains(title, strings.ToLower(term)) {
+			return true
+		}
+	}
+	return false
 }
 
 // UpdateFeedFolder sets folder_id unconditionally; nil moves the feed out of

@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"testing"
@@ -28,6 +29,118 @@ func TestStorageUsesSingleConnection(t *testing.T) {
 	s := newTestDB(t)
 	if got := s.db.Stats().MaxOpenConnections; got != 1 {
 		t.Fatalf("MaxOpenConnections = %d, want 1", got)
+	}
+}
+
+func TestTitleSearchMigrationRebuildsExistingIndex(t *testing.T) {
+	f, err := os.CreateTemp("", "hayari-search-migration-*.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	t.Cleanup(func() { os.Remove(f.Name()) })
+
+	// Create a database at the preceding migration level, including the former
+	// title-and-body FTS table, then let Open apply migrations 17-19.
+	db, err := sql.Open("sqlite", f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY)`); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	for i, migration := range migrations[:17] {
+		if _, err := db.Exec(migration); err != nil {
+			db.Close()
+			t.Fatalf("apply old migration %d: %v", i, err)
+		}
+		if _, err := db.Exec(`INSERT INTO schema_migrations (version) VALUES (?)`, i); err != nil {
+			db.Close()
+			t.Fatalf("record old migration %d: %v", i, err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO feeds (id, feed_url) VALUES (1, 'https://example.com/feed')`); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO items (id, feed_id, guid, title, date, content) VALUES (1, 1, 'g1', '【ハンターハンター】', ?, '本文だけの語句')`, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO search(rowid, title, body) VALUES (1, '【ハンターハンター】', '本文だけの語句')`); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(f.Name())
+	if err != nil {
+		t.Fatalf("Open after title search migration: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+
+	results, err := s.ListItems(ItemFilter{Search: "ハンター"}, 10, 0)
+	if err != nil || len(results) != 1 {
+		t.Fatalf("migrated Japanese title search = %d items, %v; want 1 item", len(results), err)
+	}
+	results, err = s.ListItems(ItemFilter{Search: "語句"}, 10, 0)
+	if err != nil || len(results) != 0 {
+		t.Fatalf("migrated body-only search = %d items, %v; want 0 items", len(results), err)
+	}
+}
+
+func TestTitleFilterMigrationHidesExistingMatchingItems(t *testing.T) {
+	f, err := os.CreateTemp("", "hayari-title-filter-migration-*.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	t.Cleanup(func() { os.Remove(f.Name()) })
+
+	db, err := sql.Open("sqlite", f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY)`); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	for i, migration := range migrations[:21] {
+		if _, err := db.Exec(migration); err != nil {
+			db.Close()
+			t.Fatalf("apply old migration %d: %v", i, err)
+		}
+		if _, err := db.Exec(`INSERT INTO schema_migrations (version) VALUES (?)`, i); err != nil {
+			db.Close()
+			t.Fatalf("record old migration %d: %v", i, err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO feeds (id, feed_url, title_filter_keywords) VALUES (1, 'https://example.com/feed', 'ハンター')`); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO items (id, feed_id, guid, title, date) VALUES (1, 1, 'g1', 'ハンターハンターの話題', ?)`, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	items, err := s.ListItems(ItemFilter{}, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("visible items after migration = %d, want 0", len(items))
 	}
 }
 
@@ -134,6 +247,20 @@ func TestFeedCRUD(t *testing.T) {
 		t.Errorf("Title = %q, want %q", got.Title, "Example")
 	}
 
+	if err := s.UpdateFeedTitleFilterKeywords(feed.ID, " ハンター, サッカー,ハンター,, "); err != nil {
+		t.Fatalf("UpdateFeedTitleFilterKeywords: %v", err)
+	}
+	got, _ = s.GetFeed(feed.ID)
+	if got.TitleFilterKeywords != "ハンター,サッカー" {
+		t.Errorf("TitleFilterKeywords = %q, want normalized keywords", got.TitleFilterKeywords)
+	}
+	if !TitleMatchesFilter("ハンターハンターのニュース", got.TitleFilterKeywords) {
+		t.Error("TitleMatchesFilter should match a title substring")
+	}
+	if TitleMatchesFilter("野球のニュース", got.TitleFilterKeywords) {
+		t.Error("TitleMatchesFilter should not match an unrelated title")
+	}
+
 	// UpdateFeedError
 	if err := s.UpdateFeedError(feed.ID, "timeout"); err != nil {
 		t.Fatalf("UpdateFeedError: %v", err)
@@ -171,6 +298,55 @@ func TestDeleteFeedRemovesFTSRows(t *testing.T) {
 	}
 	if rows != 0 {
 		t.Fatalf("FTS rows = %d, want 0", rows)
+	}
+}
+
+func TestFeedTitleFilterHidesAndRestoresExistingItems(t *testing.T) {
+	s := newTestDB(t)
+	feed, _ := s.CreateFeed("https://example.com/feed.xml", nil)
+	if err := s.CreateItems([]Item{
+		makeItem(feed.ID, "match", "ハンターの話題", ""),
+		makeItem(feed.ID, "keep", "野球の話題", ""),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateFeedTitleFilterKeywords(feed.ID, "ハンター,サッカー"); err != nil {
+		t.Fatal(err)
+	}
+	items, err := s.ListItems(ItemFilter{}, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Title != "野球の話題" {
+		t.Fatalf("visible items = %#v, want only unrelated title", items)
+	}
+	if err := s.UpdateFeedTitleFilterKeywords(feed.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	items, err = s.ListItems(ItemFilter{}, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("visible items after clearing keywords = %d, want 2", len(items))
+	}
+}
+
+func TestCreateItemsUsesCurrentFeedTitleFilterKeywords(t *testing.T) {
+	s := newTestDB(t)
+	feed, _ := s.CreateFeed("https://example.com/feed.xml", nil)
+	if err := s.UpdateFeedTitleFilterKeywords(feed.ID, "ハンター"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateItems([]Item{makeItem(feed.ID, "match", "ハンターハンターの話題", "")}); err != nil {
+		t.Fatal(err)
+	}
+	items, err := s.ListItems(ItemFilter{}, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("visible items = %d, want 0", len(items))
 	}
 }
 
@@ -291,28 +467,37 @@ func TestItemFTSSearch(t *testing.T) {
 
 	feed, _ := s.CreateFeed("https://example.com/feed", nil)
 	items := []Item{
-		makeItem(feed.ID, "g1", "Golang Tips", "<p>Learn Go programming</p>"),
-		makeItem(feed.ID, "g2", "Python Guide", "<p>Python is also great</p>"),
+		makeItem(feed.ID, "g1", "【ハンターハンター】 テラディン達の", "<p>本文だけの語句: programming</p>"),
+		makeItem(feed.ID, "g2", "Go News", "<p>Python is also great</p>"),
 		makeItem(feed.ID, "g3", "Rust Basics", "<p>Memory safety in Rust</p>"),
 	}
 	s.CreateItems(items)
 
-	// Search by title word
-	results, err := s.ListItems(ItemFilter{Search: "Golang"}, 10, 0)
+	// Japanese title substring search.
+	results, err := s.ListItems(ItemFilter{Search: "ハンター"}, 10, 0)
 	if err != nil {
 		t.Fatalf("ListItems with search: %v", err)
 	}
 	if len(results) != 1 {
-		t.Errorf("search 'Golang' count = %d, want 1", len(results))
+		t.Errorf("search Japanese title substring count = %d, want 1", len(results))
 	}
 
-	// Search by content word
-	results, err = s.ListItems(ItemFilter{Search: "programming"}, 10, 0)
+	// Short title search falls back to a title-only scan.
+	results, err = s.ListItems(ItemFilter{Search: "Go"}, 10, 0)
 	if err != nil {
-		t.Fatalf("ListItems with search: %v", err)
+		t.Fatalf("ListItems with short search: %v", err)
 	}
 	if len(results) != 1 {
-		t.Errorf("search 'programming' count = %d, want 1", len(results))
+		t.Errorf("search short title substring count = %d, want 1", len(results))
+	}
+
+	// Body text is not indexed or searched.
+	results, err = s.ListItems(ItemFilter{Search: "programming"}, 10, 0)
+	if err != nil {
+		t.Fatalf("ListItems with body-only search: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("body-only search count = %d, want 0", len(results))
 	}
 
 	// No match
@@ -367,7 +552,7 @@ func TestDeleteOldItems(t *testing.T) {
 			feed.ID, fmt.Sprintf("old-%d", i), fmt.Sprintf("Old %d", i), "https://x.com", oldDate)
 	}
 	tx.Commit()
-	if _, err := s.db.Exec("INSERT INTO search(rowid, title, body) SELECT id, title, content FROM items WHERE guid LIKE 'old-%'"); err != nil {
+	if _, err := s.db.Exec("INSERT INTO search(rowid, title) SELECT id, title FROM items WHERE guid LIKE 'old-%'"); err != nil {
 		t.Fatal(err)
 	}
 

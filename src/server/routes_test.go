@@ -74,6 +74,50 @@ func TestStaticAssetsAreNotCached(t *testing.T) {
 	}
 }
 
+func TestFaviconIsPublic(t *testing.T) {
+	srv, ts := newTestServer(t)
+	srv.Username = "user"
+	srv.Password = "pass"
+
+	resp := doRequest(t, ts, http.MethodGet, "/favicon.svg", "")
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Content-Type"); !strings.HasPrefix(got, "image/svg+xml") {
+		t.Errorf("Content-Type = %q, want image/svg+xml", got)
+	}
+}
+
+func TestStatsIncludesStarredCounts(t *testing.T) {
+	srv, ts := newTestServer(t)
+	feed := seedFeed(t, srv.db, "https://example.com/feed.xml", "")
+	items := seedItems(t, srv.db, feed.ID, 2)
+	if err := srv.db.SetStarred(items[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := doRequest(t, ts, http.MethodGet, "/api/stats", "")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var stats struct {
+		Unread  map[int64]int64 `json:"unread"`
+		Starred map[int64]int64 `json:"starred"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&stats); err != nil {
+		t.Fatal(err)
+	}
+	if got := stats.Unread[feed.ID]; got != 2 {
+		t.Errorf("unread count = %d, want 2", got)
+	}
+	if got := stats.Starred[feed.ID]; got != 1 {
+		t.Errorf("starred count = %d, want 1", got)
+	}
+}
+
 func TestIndexUsesUnversionedLocalAssets(t *testing.T) {
 	_, ts := newTestServer(t)
 	resp := doRequest(t, ts, http.MethodGet, "/", "")
@@ -84,7 +128,7 @@ func TestIndexUsesUnversionedLocalAssets(t *testing.T) {
 		t.Fatal(err)
 	}
 	page := string(body)
-	for _, asset := range []string{"/stylesheets/app.css", "/javascripts/api.js", "/javascripts/key.js", "/javascripts/app.js"} {
+	for _, asset := range []string{"/favicon.svg", "/stylesheets/app.css", "/javascripts/api.js", "/javascripts/key.js", "/javascripts/app.js"} {
 		if !strings.Contains(page, asset) {
 			t.Errorf("index does not reference %s", asset)
 		}
@@ -551,6 +595,24 @@ func TestFeedUpdateFolderAbsentKeeps(t *testing.T) {
 	}
 	if got.Title != "Renamed" {
 		t.Fatalf("title = %q, want Renamed", got.Title)
+	}
+}
+
+func TestFeedUpdateTitleFilterKeywords(t *testing.T) {
+	srv, ts := newTestServer(t)
+	feed, _ := srv.db.CreateFeed("https://example.com/feed.xml", nil)
+
+	resp := doRequest(t, ts, http.MethodPut, fmt.Sprintf("/api/feeds/%d", feed.ID), `{"title_filter_keywords":" ハンター, サッカー "}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
+	}
+	updated, err := srv.db.GetFeed(feed.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.TitleFilterKeywords != "ハンター,サッカー" {
+		t.Errorf("TitleFilterKeywords = %q, want normalized keywords", updated.TitleFilterKeywords)
 	}
 }
 

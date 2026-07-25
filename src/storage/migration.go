@@ -69,6 +69,16 @@ var migrations = []string{
 	`CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(title, body)`,
 	// 16: items から再バックフィル
 	`INSERT INTO search(rowid, title, body) SELECT id, title, content FROM items`,
+	// 17: 本文を検索対象から外し、日本語の部分一致用に索引を作り直す
+	`DROP TABLE IF EXISTS search`,
+	// 18: 記事タイトル専用の trigram FTS5 索引
+	`CREATE VIRTUAL TABLE search USING fts5(title, tokenize='trigram')`,
+	// 19: 既存記事のタイトルをバックフィル
+	`INSERT INTO search(rowid, title) SELECT id, title FROM items`,
+	// 20: フィードごとの記事タイトル非表示キーワード（カンマ区切り）
+	`ALTER TABLE feeds ADD COLUMN title_filter_keywords TEXT NOT NULL DEFAULT ''`,
+	// 21: フィードのタイトル非表示設定に一致した記事
+	`ALTER TABLE items ADD COLUMN hidden BOOLEAN NOT NULL DEFAULT 0`,
 }
 
 func (s *Storage) migrate() error {
@@ -78,6 +88,7 @@ func (s *Storage) migrate() error {
 		return err
 	}
 
+	needsTitleFilterReapply := false
 	for i, sql := range migrations {
 		var count int
 		s.db.QueryRow("SELECT COUNT(*) FROM schema_migrations WHERE version = ?", i).Scan(&count)
@@ -90,6 +101,12 @@ func (s *Storage) migrate() error {
 		if _, err := s.db.Exec("INSERT INTO schema_migrations (version) VALUES (?)", i); err != nil {
 			return err
 		}
+		if i == 21 {
+			needsTitleFilterReapply = true
+		}
+	}
+	if needsTitleFilterReapply {
+		return s.reapplyTitleFilterKeywords()
 	}
 	return nil
 }

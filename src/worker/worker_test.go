@@ -91,6 +91,49 @@ func TestRefreshFeedInsertsItems(t *testing.T) {
 	}
 }
 
+func TestRefreshFeedSkipsTitleFilterKeywords(t *testing.T) {
+	db := newTestDB(t)
+	srv := newFeedServer(t)
+
+	feed, _ := db.CreateFeed(srv.URL+"/feed.xml", nil)
+	if err := db.UpdateFeedTitleFilterKeywords(feed.ID, "hello,Second"); err != nil {
+		t.Fatal(err)
+	}
+	w := New(db)
+	w.RefreshFeed(feed.ID)
+
+	count, err := db.CountItems(storage.ItemFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Errorf("item count = %d, want 0 after OR title filters", count)
+	}
+}
+
+func TestRefreshFeedGenericHideFilterHidesItems(t *testing.T) {
+	db := newTestDB(t)
+	srv := newFeedServer(t)
+	feed, _ := db.CreateFeed(srv.URL+"/feed.xml", nil)
+	if _, err := db.CreateFilter(storage.Filter{
+		FeedID: &feed.ID,
+		Rule:   "Hello",
+		Action: "hide",
+		Field:  "title",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	New(db).RefreshFeed(feed.ID)
+	items, err := db.ListItems(storage.ItemFilter{}, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Title != "Second Post" {
+		t.Fatalf("visible items = %#v, want only non-hidden item", items)
+	}
+}
+
 func TestRefreshFeedUpdatesMeta(t *testing.T) {
 	db := newTestDB(t)
 	srv := newFeedServer(t)
