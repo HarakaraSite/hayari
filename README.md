@@ -63,15 +63,21 @@ Use this only behind HTTPS and restrict access to proxy logs.
 
 ## API
 
-Hayari implements the Google Reader / FreshRSS API:
+Hayari implements a FreshRSS `greader.php`-compatible subset of the Google
+Reader API. Both endpoint forms provide the same API:
 
-- `POST /accounts/ClientLogin` - Authentication
-- `GET  /reader/api/0/subscription/list` - Subscription list
-- `GET  /reader/api/0/unread-count` - Unread counts
-- `GET  /reader/api/0/stream/contents/{stream-id}` - Item stream
-- `POST /reader/api/0/edit-tag` - Tag editing (read/starred)
-- `POST /reader/api/0/subscription/edit` - Subscription management
-- `GET  /reader/api/0/tag/list` - Label/folder list
+- Google Reader form: `/accounts/ClientLogin` and `/reader/api/0/...`
+- FreshRSS form: `/api/greader.php/accounts/ClientLogin` and
+  `/api/greader.php/reader/api/0/...`
+
+The implementation is verified with ReadKit and NetNewsWire. It supports
+authentication, subscription and folder synchronization, unread and starred
+state, article retrieval, `edit-tag`, and mark-all-as-read.
+
+It is not a complete implementation of either API. For example, `rename-tag`
+and `disable-tag` are not implemented because they are outside the verified
+client workflows. See [the API reference](docs/freshrss-api.md) for the
+supported endpoint set and limitations.
 
 ## License
 

@@ -1,23 +1,31 @@
-# FreshRSS / Google Reader 互換 API
+# FreshRSS `greader.php` 互換 API
 
-hayari の実装済み API リファレンス。FreshRSS の `greader.php` を基準にし、実機で同期確認した ReadKit と NetNewsWire の互換要件を記録する。
+hayari が実装するのは、FreshRSS の `greader.php` を基準にした Google Reader API
+の互換サブセットである。完全な FreshRSS API または完全な Google Reader API の実装
+ではない。
+
+実装済みの範囲は、ReadKit と NetNewsWire が実際の同期で要求した操作を基準にして
+いる。`rename-tag` と `disable-tag` など、確認済みのクライアントワークフローが
+要求しないエンドポイントは未実装である。対応状況はこの文書のエンドポイント一覧を
+正とする。
 
 ## API の入口
 
-両方の入口を同じハンドラーへ接続する。
+hayari は同じ互換サブセットを、クライアント設定に合わせた2つの URL 形式で公開する。
 
-| 入口 | 主な利用クライアント | 用途 |
+| API 形式 | ログイン URL | API のベース URL |
 |---|---|---|
-| `/accounts/ClientLogin` と `/reader/api/0/...` | NetNewsWire | Google Reader 形式 |
-| `/api/greader.php/accounts/ClientLogin` と `/api/greader.php/reader/api/0/...` | ReadKit の FreshRSS 接続 | FreshRSS 形式 |
+| Google Reader 形式 | `/accounts/ClientLogin` | `/reader/api/0/...` |
+| FreshRSS `greader.php` 形式 | `/api/greader.php/accounts/ClientLogin` | `/api/greader.php/reader/api/0/...` |
 
-Web UI の認証は `/login` の Cookie セッションであり、このトークンAPIとは別系統。ただしフィード・記事・状態は同じデータベースを共有する。
+2つの入口は同じハンドラーへ接続されるため、hayari が提供する機能は同一である。
+Web UI の認証は `/login` の Cookie セッションであり、このトークンAPIとは別系統。
+ただしフィード・記事・状態は同じデータベースを共有する。
 
 ## 実機確認（2026-07-24）
 
 - **ReadKit**: ログイン、フォルダ／フィード、未読・スター・既読の記事同期、本文取得、`edit-tag` 更新を確認。
 - **NetNewsWire**: ログイン、フォルダ／フィード、記事一覧・本文の同期、`edit-tag` 更新を確認。
-- ReadKit は FreshRSS 入口、NetNewsWire は Google Reader 入口を用いた。
 
 記事の初回同期では、ReadKit は `stream/items/ids` を1000件単位でページングし、続けて `stream/items/contents` を複数回POSTする。IDと継続トークンの形式を変えないこと。
 
@@ -464,7 +472,8 @@ s=feed/12345&ts=1623456789000000000
 
 #### 未実装
 
-以下は FreshRSS にはあるが、hayari では現時点で未実装。クライアント互換の根拠として扱わない。
+以下は FreshRSS にはあるが、hayari では現時点で未実装。確認済みのクライアント
+ワークフローでは要求されていないため、クライアント互換の根拠として扱わない。
 
 **POST /reader/api/0/rename-tag** — ラベル名変更
 ```
