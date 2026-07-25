@@ -1,6 +1,7 @@
 # Hayari
 
 A self-hosted RSS aggregator written in Go with a vanilla JS frontend.
+The name Hayari comes from the Japanese word 「流行り」, meaning a trend or something in vogue.
 
 ## Features
 
