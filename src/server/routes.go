@@ -21,10 +21,12 @@ import (
 
 func (s *Server) registerRoutes(mux *http.ServeMux) {
 	fs := http.FileServer(http.FS(assets.FS))
-	mux.HandleFunc("/favicon.svg", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "public, max-age=604800")
+	serveFavicon := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
 		http.ServeFileFS(w, r, assets.FS, "favicon.svg")
-	})
+	}
+	mux.HandleFunc("/favicon.svg", serveFavicon)
+	mux.HandleFunc("/hayari-mark.svg", serveFavicon)
 
 	auth := s.authMiddleware
 

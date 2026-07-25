@@ -19,6 +19,7 @@ const App = (() => {
     loading:     false,
     selectedItem: null,
     readabilityMode: false,
+    unreadListNeedsRefresh: false,
     addFeedMode: 'find',   // 'find' | 'subscribe'
   };
 
@@ -261,22 +262,56 @@ const App = (() => {
     return li;
   }
 
-  // Reading state changes only affect Unread badges. A full sidebar render
-  // keeps the hidden-feed rule in sync without showing counts in All/Starred.
+  // Reading an item keeps it visible until the user returns to the source list.
+  // The counts still update immediately; the next source navigation applies the
+  // unread filter and removes feeds whose counts reached zero.
   function refreshBadges() {
     if (state.filter === 'unread') {
-      const resetSource = ensureVisibleSource();
-      renderSidebar();
-      if (resetSource) loadItems(true);
+      state.unreadListNeedsRefresh = true;
+      syncUnreadSidebarCounts();
     }
   }
 
   function appendCountBadge(row, count) {
-    if (count <= 0) return;
-    const badge = document.createElement('span');
-    badge.className = 'sidebar-count-badge';
+    setCountBadge(row, count);
+  }
+
+  function setCountBadge(row, count, { showZero = false } = {}) {
+    let badge = row.querySelector('.sidebar-count-badge');
+    if (count <= 0 && !showZero) {
+      badge?.remove();
+      return;
+    }
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'sidebar-count-badge';
+      row.appendChild(badge);
+    }
     updateCountBadge(badge, count);
-    row.appendChild(badge);
+  }
+
+  function syncUnreadSidebarCounts() {
+    feedList.querySelectorAll('[data-feed-id]').forEach(li => {
+      const feedID = +li.dataset.feedId;
+      const row = li.querySelector('.feed-row');
+      if (row) setCountBadge(row, state.feedStats[feedID] || 0, { showZero: true });
+    });
+    feedList.querySelectorAll('[data-folder-id]').forEach(li => {
+      const folderID = +li.dataset.folderId;
+      const row = li.querySelector('.folder-header');
+      if (!row) return;
+      const count = state.feeds
+        .filter(feed => feed.folder_id === folderID)
+        .reduce((sum, feed) => sum + (state.feedStats[feed.id] || 0), 0);
+      setCountBadge(row, count, { showZero: true });
+    });
+  }
+
+  function applyUnreadListRefresh() {
+    if (state.filter !== 'unread' || !state.unreadListNeedsRefresh) return;
+    state.unreadListNeedsRefresh = false;
+    ensureVisibleSource();
+    renderSidebar();
   }
 
   function updateCountBadge(badge, count) {
@@ -298,6 +333,7 @@ const App = (() => {
   }
 
   function selectSource(type, id, name) {
+    applyUnreadListRefresh();
     state.sourceType = type;
     state.sourceId   = id;
     itemListTitle.textContent = name || 'All items';
@@ -308,6 +344,7 @@ const App = (() => {
   }
 
   function selectFilter(filter) {
+    applyUnreadListRefresh();
     state.filter = filter;
     ensureVisibleSource();
     // Update tab highlight
@@ -855,6 +892,7 @@ const App = (() => {
   }
 
   function navigateSource(dir) {
+    applyUnreadListRefresh();
     const list = buildSourceList();
     const idx  = list.findIndex(s => s.type === state.sourceType && s.id === state.sourceId);
     const next = list[Math.max(0, Math.min(list.length - 1, idx + dir))];

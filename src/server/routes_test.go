@@ -59,7 +59,7 @@ func TestHealthz(t *testing.T) {
 
 func TestStaticAssetsAreNotCached(t *testing.T) {
 	_, ts := newTestServer(t)
-	for _, path := range []string{"/", "/stylesheets/app.css", "/javascripts/api.js", "/javascripts/key.js", "/javascripts/app.js"} {
+	for _, path := range []string{"/", "/favicon.svg", "/hayari-mark.svg", "/stylesheets/app.css", "/javascripts/api.js", "/javascripts/key.js", "/javascripts/app.js"} {
 		resp := doRequest(t, ts, http.MethodGet, path, "")
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
@@ -128,7 +128,7 @@ func TestIndexUsesUnversionedLocalAssets(t *testing.T) {
 		t.Fatal(err)
 	}
 	page := string(body)
-	for _, asset := range []string{"/favicon.svg", "/stylesheets/app.css", "/javascripts/api.js", "/javascripts/key.js", "/javascripts/app.js"} {
+	for _, asset := range []string{"/hayari-mark.svg", "/stylesheets/app.css", "/javascripts/api.js", "/javascripts/key.js", "/javascripts/app.js"} {
 		if !strings.Contains(page, asset) {
 			t.Errorf("index does not reference %s", asset)
 		}
