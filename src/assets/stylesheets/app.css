@@ -20,7 +20,7 @@ body {
 
 /* ── App grid: sidebar | items | detail ─────────────────────── */
 #app {
-  --sidebar-width: 260px;
+  --sidebar-width: 288px;
   --item-list-width: 320px;
   display: grid;
   grid-template-columns: var(--sidebar-width) 8px var(--item-list-width) 8px minmax(280px, 1fr);
@@ -151,7 +151,7 @@ body.is-resizing-columns {
 /* Feed row */
 .feed-row {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) 2.7rem;
+  grid-template-columns: 16px minmax(0, 1fr) max-content;
   align-items: center;
   column-gap: 0.4rem;
   padding: 0.28rem 0.5rem 0.28rem 1rem;
@@ -184,7 +184,7 @@ body.is-resizing-columns {
 /* Folder row */
 .folder-header {
   display: grid;
-  grid-template-columns: 0.65rem minmax(0, 1fr) 2.7rem;
+  grid-template-columns: 0.65rem minmax(0, 1fr) max-content;
   align-items: center;
   column-gap: 0.4rem;
   padding: 0.3rem 0.5rem 0.3rem 0.75rem;
@@ -222,20 +222,16 @@ body.is-resizing-columns {
 }
 .folder-feeds .feed-row { padding-left: 1.75rem; }
 
-/* Sidebar item count badge */
+/* Sidebar item count */
 .sidebar-count-badge {
   box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
+  text-align: right;
   font-size: 0.68rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  width: 100%;
-  padding: 0.05em 0.2em;
-  background: var(--pico-secondary-background, #6c757d);
-  color: #fff;
-  border-radius: 999px;
+  padding: 0;
+  color: var(--pico-muted-color);
 }
 
 .feed-row > .sidebar-count-badge,
@@ -245,7 +241,6 @@ body.is-resizing-columns {
 
 .feed-row.active .sidebar-count-badge,
 .folder-header.active .sidebar-count-badge {
-  background: rgba(255,255,255,0.3);
   color: var(--pico-primary-inverse);
 }
 
@@ -380,9 +375,7 @@ html[data-theme="dark"] #btn-manage-source { color: #e6edf7; }
 
 .item-title {
   font-size: 0.875rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
   color: var(--pico-muted-color);
 }
 

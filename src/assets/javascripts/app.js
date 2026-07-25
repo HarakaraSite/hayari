@@ -42,7 +42,7 @@ const App = (() => {
       loadMoreSentinel, sidebarResizer, itemListResizer;
 
   const columnWidths = {
-    sidebar: { cssVar: '--sidebar-width', storageKey: 'hayari.v2.sidebar-width', fallback: 260, min: 200 },
+    sidebar: { cssVar: '--sidebar-width', storageKey: 'hayari.v2.sidebar-width', fallback: 288, min: 200 },
     itemList: { cssVar: '--item-list-width', storageKey: 'hayari.v2.item-list-width', fallback: 320, min: 240 },
   };
   const minDetailWidth = 280;

@@ -16,9 +16,9 @@ Hayari は、日本語の「流行り」に由来する名前です。
 
 ## スクリーンショット
 
-フィード追加後のフィード一覧、未読数、記事一覧、閲覧ペインです。
+フィード追加後のフィード一覧、未読数、記事一覧、閲覧ペインです。Engadgetを選択し、記事を開いています。
 
-![The Go Blog のフィードと記事を表示した Hayari](docs/images/hayari-go-blog.png)
+![Engadget のフィードと記事を表示した Hayari](docs/images/hayari-engadget.png)
 
 ## ビルド
 

@@ -16,9 +16,10 @@ The name Hayari comes from the Japanese word 「流行り」, meaning a trend or
 
 ## Screenshot
 
-Feeds, unread counts, article list, and reading pane after adding feeds.
+Feeds, unread counts, article list, and reading pane after adding feeds. The
+Engadget feed is selected with an article open.
 
-![Hayari showing The Go Blog feed and an article](docs/images/hayari-go-blog.png)
+![Hayari showing the Engadget feed and an article](docs/images/hayari-engadget.png)
 
 ## Building
 
