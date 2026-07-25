@@ -565,3 +565,19 @@
 ### 連絡・注意事項
 - Firefox の古い favicon キャッシュを避けるため、favicon URL を `/hayari-mark.svg` に替え、同経路を `Cache-Control: no-store` で配信するようにした。ユーザーが見たホーム画面上で明朝体への更新を確認済み。
 - リリース前に `go test ./...`、`go vet ./...`、`node --check`、`git diff --check`、6対象のCGO無効クロスビルドが成功。変更は未コミット。
+
+## 2026-07-25 21:30 JST
+
+- 実行エージェント: Codex
+- モデル: 不明
+- 作業トピック: Hayari v1.1.3 リリース
+
+### 実施したこと
+- `fix: refresh favicon and unread list behavior`（`b99e397`）をmainへpushし、注釈付きタグ `v1.1.3` を作成・pushした。
+- Forgejo Actions run 10（`build-and-release`）が、タグ `v1.1.3` とコミット `b99e397` の完全一致で成功した。
+
+### 次のタスク候補
+- なし
+
+### 連絡・注意事項
+- リリース後の引き継ぎ記録はこのエントリーをコミットしてmainへpushする。
