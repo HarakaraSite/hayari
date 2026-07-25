@@ -1,5 +1,7 @@
 # Hayari
 
+[日本語版](README.ja.md)
+
 A self-hosted RSS aggregator written in Go with a vanilla JS frontend.
 The name Hayari comes from the Japanese word 「流行り」, meaning a trend or something in vogue.
 
@@ -8,7 +10,7 @@ The name Hayari comes from the Japanese word 「流行り」, meaning a trend or
 - Single binary with embedded frontend assets
 - SQLite database (no external DB required)
 - Desktop tray icon support (build with `gui` tag)
-- FreshRSS / Google Reader API compatible
+- FreshRSS `greader.php`-compatible API subset
 - Per-feed title keyword exclusions (literal substring match)
 - Pico CSS based lightweight UI
 
