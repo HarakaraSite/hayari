@@ -15,7 +15,7 @@ A self-hosted RSS aggregator written in Go with a vanilla JS frontend.
 
 Feeds, unread counts, article list, and reading pane after adding feeds.
 
-![Hayari showing registered feeds and an article](docs/images/page-2026-07-25T07-56-49-032Z.png)
+![Hayari showing The Go Blog feed and an article](docs/images/hayari-go-blog.png)
 
 ## Building
 
