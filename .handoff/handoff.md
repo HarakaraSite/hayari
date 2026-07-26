@@ -642,3 +642,19 @@
 
 ### 連絡・注意事項
 - `node --check src/assets/javascripts/app.js` と `git diff --check` が成功。変更は未コミット。
+
+## 2026-07-26 13:16 JST
+
+- 実行エージェント: Codex
+- モデル: 不明
+- 作業トピック: Hayari v1.1.4 リリース
+
+### 実施したこと
+- `fix: defer mark-all-read list refresh`（`02df223`）をmainへpushし、注釈付きタグ `v1.1.4` を作成・pushした。
+- Forgejo Actions run 11（`build-and-release`）が、タグ `v1.1.4` とコミット `02df223` の完全一致で成功した。
+
+### 次のタスク候補
+- なし
+
+### 連絡・注意事項
+- リリース後の引き継ぎ記録はこのエントリーをコミットしてmainへpushする。
