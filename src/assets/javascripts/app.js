@@ -907,13 +907,17 @@ const App = (() => {
     if (state.sourceType === 'feed')   params.feed_id   = state.sourceId;
     if (state.sourceType === 'folder') params.folder_id = state.sourceId;
     await API.markAllRead(params);
-    // Refresh stats and items
+    // Keep the current unread list visible until the user navigates back to
+    // the source list, matching the behavior when opening a single item.
     const stats = await API.getStats();
     state.feedStats = (stats && stats.unread) || {};
     state.starStats = (stats && stats.starred) || {};
-    ensureVisibleSource();
-    renderSidebar();
-    await loadItems(true);
+    state.items.forEach(item => {
+      item.status = 'read';
+      const li = itemList.querySelector(`[data-item-id="${item.id}"]`);
+      if (li) li.classList.remove('unread');
+    });
+    refreshBadges();
   }
 
   // ── Search ─────────────────────────────────────────────────────
