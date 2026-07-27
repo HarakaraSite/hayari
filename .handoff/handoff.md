@@ -705,3 +705,19 @@
 
 ### 連絡・注意事項
 - 現時点ではPico.cssを維持する。独自CSS化のコード変更は行っていない。
+
+## 2026-07-27 20:56 JST
+
+- 実行エージェント: Codex
+- モデル: 不明
+- 作業トピック: Hayari 外部取得User-Agentの共通化
+
+### 実施したこと
+- ビルド時に注入される `main.Version` を起動時にworkerへ渡し、`Hayari/<version> (+https://forge.harakara.site/littleisland/hayari)` を共通User-Agentとして生成するようにした。リリースタグの先頭 `v` はUser-Agentでは除去する。
+- フィード本体、フィード検出、faviconのHTML・画像取得をすべて共通User-Agent経由に統一し、faviconの各取得経路をテストした。
+
+### 次のタスク候補
+- なし
+
+### 連絡・注意事項
+- 2NNは既定Go User-Agentで403、Hayari User-Agentで200を確認済み。`GOCACHE=/tmp/yarr2-gocache go test ./...` はローカルloopback許可環境で成功した。

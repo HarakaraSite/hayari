@@ -10,6 +10,7 @@ import (
 	"forge.harakara.site/littleisland/hayari/src/platform"
 	"forge.harakara.site/littleisland/hayari/src/server"
 	"forge.harakara.site/littleisland/hayari/src/storage"
+	"forge.harakara.site/littleisland/hayari/src/worker"
 )
 
 var Version = "dev"
@@ -32,6 +33,7 @@ func main() {
 		fmt.Println(Version)
 		return
 	}
+	worker.SetVersion(Version)
 
 	db, err := storage.Open(*dbPath)
 	if err != nil {

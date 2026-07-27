@@ -27,12 +27,10 @@ func FindFeeds(pageURL string) ([]FoundFeed, error) {
 }
 
 func findFeeds(client *http.Client, pageURL string) ([]FoundFeed, error) {
-	req, err := http.NewRequest(http.MethodGet, pageURL, nil)
+	req, err := newGetRequest(pageURL, "text/html, application/xhtml+xml, application/xml;q=0.9, */*;q=0.8")
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "hayari/1.0 (+https://forge.harakara.site/littleisland/hayari)")
-	req.Header.Set("Accept", "text/html, application/xhtml+xml, application/xml;q=0.9, */*;q=0.8")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -142,7 +140,11 @@ func FetchFavicon(siteURL string) (string, error) {
 	}
 
 	// Try to extract icon URL from the HTML
-	resp, err := crawlerClient.Get(siteURL)
+	req, err := newGetRequest(siteURL, "text/html, application/xhtml+xml, */*;q=0.8")
+	if err != nil {
+		return "", err
+	}
+	resp, err := crawlerClient.Do(req)
 	if err == nil {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1MB limit
 		resp.Body.Close()
@@ -195,7 +197,11 @@ func findFaviconURL(r io.Reader, base *url.URL) string {
 
 // fetchAsDataURL downloads an image URL and returns it as a base64 data URL.
 func fetchAsDataURL(iconURL string) (string, error) {
-	resp, err := crawlerClient.Get(iconURL)
+	req, err := newGetRequest(iconURL, "image/avif, image/webp, image/png, image/jpeg, image/gif, image/x-icon, */*;q=0.8")
+	if err != nil {
+		return "", err
+	}
+	resp, err := crawlerClient.Do(req)
 	if err != nil {
 		return "", err
 	}

@@ -178,6 +178,15 @@ func TestFetchRejectsOversizedResponse(t *testing.T) {
 	}
 }
 
+func TestUserAgentUsesReleaseVersion(t *testing.T) {
+	SetVersion("v1.2.3")
+	t.Cleanup(func() { SetVersion("dev") })
+
+	if got, want := UserAgent(), "Hayari/1.2.3 (+https://forge.harakara.site/littleisland/hayari)"; got != want {
+		t.Errorf("UserAgent() = %q, want %q", got, want)
+	}
+}
+
 func TestRefreshFeedClearsErrorOnSuccess(t *testing.T) {
 	db := newTestDB(t)
 	srv := newFeedServer(t)
@@ -276,6 +285,9 @@ func TestFetchFavicon(t *testing.T) {
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got, want := r.Header.Get("User-Agent"), UserAgent(); got != want {
+			t.Errorf("User-Agent = %q, want %q", got, want)
+		}
 		switch r.URL.Path {
 		case "/":
 			w.Header().Set("Content-Type", "text/html")
@@ -303,6 +315,9 @@ func TestFetchFaviconFallback(t *testing.T) {
 	png1x1 := []byte{0x89, 0x50, 0x4e, 0x47} // just the header for test
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got, want := r.Header.Get("User-Agent"), UserAgent(); got != want {
+			t.Errorf("User-Agent = %q, want %q", got, want)
+		}
 		switch r.URL.Path {
 		case "/":
 			w.Header().Set("Content-Type", "text/html")
