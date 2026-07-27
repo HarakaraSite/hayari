@@ -59,7 +59,7 @@ func TestHealthz(t *testing.T) {
 
 func TestStaticAssetsAreNotCached(t *testing.T) {
 	_, ts := newTestServer(t)
-	for _, path := range []string{"/", "/favicon.svg", "/hayari-mark.svg", "/stylesheets/app.css", "/javascripts/api.js", "/javascripts/key.js", "/javascripts/app.js"} {
+	for _, path := range []string{"/", "/favicon.svg", "/hayari-mark.svg", "/stylesheets/pico.min.css", "/stylesheets/app.css", "/javascripts/api.js", "/javascripts/key.js", "/javascripts/app.js"} {
 		resp := doRequest(t, ts, http.MethodGet, path, "")
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
@@ -128,13 +128,34 @@ func TestIndexUsesUnversionedLocalAssets(t *testing.T) {
 		t.Fatal(err)
 	}
 	page := string(body)
-	for _, asset := range []string{"/hayari-mark.svg", "/stylesheets/app.css", "/javascripts/api.js", "/javascripts/key.js", "/javascripts/app.js"} {
+	for _, asset := range []string{"/hayari-mark.svg", "/stylesheets/pico.min.css", "/stylesheets/app.css", "/javascripts/api.js", "/javascripts/key.js", "/javascripts/app.js"} {
 		if !strings.Contains(page, asset) {
 			t.Errorf("index does not reference %s", asset)
 		}
 	}
 	if strings.Contains(page, "?v=") {
 		t.Error("index must not use manual asset version query parameters")
+	}
+	if strings.Contains(page, "https://") {
+		t.Error("index must not reference external assets")
+	}
+}
+
+func TestLoginUsesLocalPicoCSS(t *testing.T) {
+	_, ts := newTestServer(t)
+	resp := doRequest(t, ts, http.MethodGet, "/login", "")
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := string(body)
+	if !strings.Contains(page, "/stylesheets/pico.min.css") {
+		t.Error("login does not reference the bundled Pico CSS")
+	}
+	if strings.Contains(page, "https://") {
+		t.Error("login must not reference external assets")
 	}
 }
 
