@@ -721,3 +721,19 @@
 
 ### 連絡・注意事項
 - 2NNは既定Go User-Agentで403、Hayari User-Agentで200を確認済み。`GOCACHE=/tmp/yarr2-gocache go test ./...` はローカルloopback許可環境で成功した。
+
+## 2026-07-27 20:59 JST
+
+- 実行エージェント: Codex
+- モデル: 不明
+- 作業トピック: Hayari v1.1.5 リリース
+
+### 実施したこと
+- 外部取得User-Agentの共通化を `fix: identify external fetches`（`ba1933b`）としてmainへpushし、注釈付きタグ `v1.1.5` を同コミットへ作成・pushした。
+- Forgejo Actions run 12（`build-and-release`）が、タグ `v1.1.5` とコミット `ba1933b` の完全一致で成功した。
+
+### 次のタスク候補
+- なし
+
+### 連絡・注意事項
+- リリース前に `go test ./...`、`go vet ./...`、CGO無効の6対象クロスビルド、Darwin arm64成果物の `--version` を確認した。
