@@ -151,10 +151,10 @@
 ## 🔴 高優先
 
 ### GReader 互換性の実機確認
-- [ ] Reeder でログイン・購読一覧・未読同期・既読/スター操作を確認
-- [ ] NetNewsWire でログイン・購読一覧・未読同期・既読/スター操作を確認
-- [ ] ReadKit または別クライアントで smoke test
-- [ ] 実機確認で見つかった不足フィールド・レスポンス形式を修正
+- [x] ReadKit でログイン・購読一覧・未読同期・既読/スター操作を確認
+- [x] NetNewsWire でログイン・購読一覧・未読同期・既読/スター操作を確認
+- [x] 実機確認で見つかった不足フィールド・レスポンス形式を修正
+- [x] Reeder は対応・実機検証の対象外とする
 
 ### Web UI 動作確認
 - [x] フィード追加・更新・記事閲覧のブラウザ smoke test（2NN RSS、2026-07-10）
@@ -167,58 +167,50 @@
 ## 🟡 中優先
 
 ### ストレージ・検索
-- [ ] `feeds.icon` の保存形式を決める（現状 TEXT data URL。BLOB にするか、このまま統一するか）
-- [ ] 検索クエリのエスケープ/構文エラー時の UX を改善
-- [ ] `newest_first` 設定を追加するか判断
-- [ ] `GET /api/items` の新着順/古い順切替を UI 設定と連携
+- [x] `feeds.icon` は TEXT data URL として保存（取得・ETag キャッシュ付き配信まで実装済み）。BLOB へは移行しない
+- [x] Web UI の記事タイトル検索（FTS5 trigram による日本語の部分一致）
+- [x] Web UI の既定の並び順は新着順とする。並び順設定は当面追加しない
+- [ ] 将来必要になった場合、`GET /api/items` の新着順/古い順切替を UI 設定と連携
 
 ### フロントエンド
-- [ ] フィード追加後、初回取得の完了を待ってサイドバー・記事一覧を自動更新する
-- [ ] パネル幅リサイズ（左カラム・中カラムをドラッグで調整）
-- [ ] フィードエラー表示 UI（`/api/feeds/errors` を使う）
-- [ ] 404 など継続取得不能なフィードの扱いを決める（UI 通知・再試行・整理手順）
-- [ ] フィルター管理 UI（一覧・追加・編集・削除）
-- [ ] フィルターのルール種別（正規表現 / 部分一致）を選択可能にする
-- [ ] item.image の表示対応を検討（使う場合は URL 安全性を維持）
+- [x] フィード追加後、初回取得の完了を待ってサイドバー・記事一覧を自動更新する
+- [x] パネル幅リサイズ（左カラム・中カラムをドラッグで調整）
+- [x] フィードエラー表示・継続取得不能なフィードの扱いは、既存 API/バックエンドの現状で確定（追加 UI は対象外）
+- [x] 汎用フィルター管理 UI とルール種別選択は対象外。フィード単位のタイトルキーワード非表示フィルタを Web UI で提供する
+- [x] item.image の表示対応は不要（記事本文内の画像表示は維持し、RSS enclosure 等の代表画像を別途 UI 表示しない）
 
 ### 認証・運用
-- [ ] HTTPS 利用時に Cookie `Secure` を付ける方針を決める
-- [ ] GReader トークンを再起動後も維持するか判断（現状はインメモリ）
+- [x] HTTPS リバースプロキシ利用時の `--secure-cookie` 運用を README に記載
+- [x] GReader トークンはインメモリのみとし、再起動後はクライアントが再ログインする現仕様を維持
 - [x] `/page`・フィード取得・favicon 取得の SSRF 対策（private / loopback / link-local 等の拒否、リダイレクト先を含む）
 
 ### ドキュメント
-- [ ] CLAUDE.md 作成（プロジェクト構造・ビルド方法・設計方針）
-- [ ] `README.md` の更新（現状の機能・使い方・API・制限事項）
+- [x] README 英語版・日本語版（機能・使い方・API・制限事項）
+- [x] `docs/freshrss-api.md` / `docs/freshrss-api.ja.md` に実装済み・確認済み・未実装 API を記載
 - [x] `docs/yarr-research.md` の未実装リストを現状に合わせて更新
-- [ ] `docs/freshrss-api.md` に実装済み/未検証の注記を追加
 
 ---
 
 ## 🟢 低優先
 
 ### ビルド・配布
-- [ ] cross-compile ターゲット追加
-- [ ] Docker イメージ作成
-- [x] GitHub Actions CI（build / `go test -race` / `go vet`。GitHub 上での初回実行は未確認）
-- [ ] リリース用 version injection 整備
+- [x] ローカル用 cross-compile ターゲットは追加しない（リリース前の手動6対象検査と Forgejo CI の6対象クロスビルドで十分）
+- [x] Docker イメージは提供しない（単一バイナリによる既存運用を維持）
+- [x] Forgejo Actions CI / タグリリース（6対象クロスビルド、チェックサム、version injection）
 
 ### 追加機能
-- [ ] Fever API 対応を検討
-- [ ] Readability 抽出品質の改善
-- [ ] favicon 再取得・手動更新
-- [ ] フィード別更新間隔
-- [ ] 設定の import / export
+- [x] Fever API は対応しない（FreshRSS / Google Reader API の現行互換を維持）
+- [x] Readability 抽出品質の改善は現時点では行わない（具体的な問題が出た場合に再検討）
+- [ ] 未取得フィードfaviconの再試行を検討（起動時に `icon IS NULL` のフィードを再取得する案。既存faviconの手動更新は必要性が出た場合に併せて検討）
+- [x] フィード別更新間隔は追加しない（全フィード共通の `refresh_rate` を維持）
+- [x] 設定の import / export は追加しない（フィード・フォルダ移行は既存の OPML import / export を維持）
 
 ---
 
 ## 実装の推奨順序
 
 ```text
-1. SSRF 対策、ログインレート制限、HTTP タイムアウトなどのセキュリティ硬化
-2. Reeder / NetNewsWire 実機テストと、互換性差分の修正
-3. Web UI smoke test とレスポンシブ確認
-4. フィードエラー表示 UI と検索 UX 改善
-5. README / CLAUDE.md / FreshRSS API ドキュメントの更新
-6. Docker・cross compile・リリース整備
-7. フィルター管理 UI と追加機能
+1. 記事の並び順・favicon 保存形式など、未決のデータ/UI 方針を決める
+2. Docker・配布形態など、必要になった運用機能を選択する
+3. Fever API、翻訳、フィード別更新間隔など、将来機能を個別に検討する
 ```
