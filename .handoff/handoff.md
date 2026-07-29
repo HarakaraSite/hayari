@@ -27,6 +27,15 @@
 
 ## Checkpoints
 
+## 2026-07-29 19:26 JST
+
+- 実行エージェント: Codex
+- モデル: 不明
+- 作業トピック: v1.1.6 リリース
+- 実施: `eb630b4` を `v1.1.6` として tag・push し、Forgejo Release の公開を確認。Darwin/Linux/Windows のamd64・arm64計6バイナリと `SHA256SUMS` の計7アセットを確認した。
+- 次: なし
+- 注意: tag に含まれる変更はフィード探索の MIME 型判定、直接入力 Atom フィードの回帰テスト、ソース切替時の詳細クリア。YouTube の候補生成は ISS-20260729-youtube-feed-variants として保留。
+
 ## 2026-07-29 19:22 JST
 
 - 実行エージェント: Codex
