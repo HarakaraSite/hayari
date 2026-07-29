@@ -334,6 +334,9 @@ const App = (() => {
 
   function selectSource(type, id, name) {
     applyUnreadListRefresh();
+    if (type !== state.sourceType || id !== state.sourceId) {
+      closeDetail();
+    }
     state.sourceType = type;
     state.sourceId   = id;
     itemListTitle.textContent = name || 'All items';

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -61,11 +62,9 @@ func extractFeedLinks(r io.Reader, baseURL string) ([]FoundFeed, error) {
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
 		if n.Type == html.ElementNode && n.Data == "link" {
-			var rel, href, title, typ string
+			var href, title, typ string
 			for _, attr := range n.Attr {
 				switch attr.Key {
-				case "rel":
-					rel = attr.Val
 				case "href":
 					href = attr.Val
 				case "title":
@@ -74,7 +73,10 @@ func extractFeedLinks(r io.Reader, baseURL string) ([]FoundFeed, error) {
 					typ = attr.Val
 				}
 			}
-			if isFeedRel(rel) || isFeedType(typ) {
+			// rel="alternate" describes any alternative representation, such as
+			// a mobile page or application deep link. Only a feed-specific MIME
+			// type identifies this link as a feed.
+			if isFeedType(typ) {
 				if href != "" {
 					absHref := resolveURL(base, href)
 					if !seen[absHref] {
@@ -93,23 +95,17 @@ func extractFeedLinks(r io.Reader, baseURL string) ([]FoundFeed, error) {
 	return feeds, nil
 }
 
-func isFeedRel(rel string) bool {
-	return strings.Contains(rel, "alternate")
-}
-
 func isFeedType(typ string) bool {
-	feedTypes := []string{
-		"application/rss+xml",
-		"application/atom+xml",
-		"application/json",
-		"application/feed+json",
+	mediaType, _, err := mime.ParseMediaType(typ)
+	if err != nil {
+		return false
 	}
-	for _, ft := range feedTypes {
-		if strings.EqualFold(typ, ft) {
-			return true
-		}
+	switch strings.ToLower(mediaType) {
+	case "application/rss+xml", "application/atom+xml", "application/feed+json":
+		return true
+	default:
+		return false
 	}
-	return false
 }
 
 func resolveURL(base *url.URL, href string) string {

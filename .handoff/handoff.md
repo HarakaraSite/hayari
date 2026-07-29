@@ -19,13 +19,49 @@
 
 ### 未決事項
 - ISS-20260728-missing-feed-favicon-retry: 未取得フィードfaviconの再試行方法を継続検討する。起動時に `icon IS NULL` のフィードを別途走査する案がある。通常の起動時フィード更新では304応答時にfavicon取得まで到達しない。
+- ISS-20260729-youtube-feed-variants: YouTube チャンネル URL の検出時、通常の channel RSS（All）に加え、`UC` を `UULF`／`UULV`／`UUSH` へ置換した Videos／Live Streams／Short videos の playlist RSS を候補として提示する将来機能。Yarr の `src/content/scraper/finder.go` と同様に、既定での自動置換はせず利用者が選択する。
 - ISS-20260728-title-translation: 英語フィードの記事タイトルを日本語表示する将来機能。今週末に着手予定で、今日は実装しない。開始時に翻訳サービス、認証情報、利用制限、失敗時の原文フォールバックを設計する。
-- ISS-20260728-clear-detail-on-source-change: フィード／フォルダ移動時に右ペインの記事詳細を空にする将来機能。今週末に着手予定で、今日は実装しない。
 
 ### ユーザー判断待ち
 - なし
 
 ## Checkpoints
+
+## 2026-07-29 19:22 JST
+
+- 実行エージェント: Codex
+- モデル: 不明
+- 作業トピック: 直接入力 RSS の購読回帰防止
+- 実施: YouTube playlist のような直接入力 Atom フィードで、entry の `alternate` リンクを候補にしないテストを追加。Playwright でも playlist URL の入力後に候補選択を経ず `Videos` フィードとして15件を購読できることを確認した。
+- 次: なし
+- 注意: 未取得 favicon の `/api/feeds/:id/icon` 404 はテスト用フィード固有で、直接入力 RSS の購読結果には影響しない。
+
+## 2026-07-29 19:19 JST
+
+- 実行エージェント: Codex
+- モデル: 不明
+- 作業トピック: ソース切替時の記事詳細クリア
+- 実施: フィード／フォルダなどのソースが実際に変わるときだけ右ペインを閉じるよう実装。同一ソースの再選択と同一フィード内の記事選択は詳細を維持する。Playwright で別フィード切替時のクリアと同一フィード再選択時の維持を確認した。
+- 次: なし
+- 注意: ISS-20260728-clear-detail-on-source-change は解消。テスト用の未取得 favicon は `/api/feeds/:id/icon` の404をブラウザ console に出すが、本機能のエラーではない。
+
+## 2026-07-29 19:15 JST
+
+- 実行エージェント: Codex
+- モデル: 不明
+- 作業トピック: フィード探索候補の MIME 型判定
+- 実施: `rel=alternate` 単独での候補採用を廃止し、RSS／Atom／JSON Feed の専用 MIME 型だけを受理するよう修正。YouTube のモバイル・アプリ URL、動画ページ、一般 JSON API を除外する回帰テストを追加し、`go test ./...` が成功した。
+- 次: ISS-20260729-youtube-feed-variants の実装時に、型付き YouTube channel RSS を起点に選択候補を追加する。
+- 注意: generic `application/json` の自動検出は行わない。JSON Feed は標準の `application/feed+json` を検出し、型が不明な既存フィードは直接 URL 入力で購読できる。
+
+## 2026-07-29 19:02 JST
+
+- 実行エージェント: Codex
+- モデル: 不明
+- 作業トピック: YouTube フィード種別の将来対応
+- 実施: Yarr の YouTube 固有候補生成を確認し、All／Videos／Live Streams／Short videos を利用者が選択する将来機能として ISS-20260729-youtube-feed-variants を記録した。
+- 次: 実装時にフィード候補 API と追加フィード UI を拡張し、YouTube の channel RSS を起点に4種の候補を表示・選択できるようにする。
+- 注意: `UULF` 等の playlist URL は YouTube ページのリンクではなく、Yarr が channel ID 規則から生成している。既存の channel RSS を自動置換しない。
 
 - 2026-07-10 15:48 [codex] docs/tasks.md と docs/yarr-research.md を実装へ同期。次は v1 Phase 0（CI・healthz・version）または SSRF 対策。
 - 2026-07-10 15:56 [codex] Phase 0 完了: /healthz、/api/status の Version 貫通、GitHub Actions CI を追加。go test/vet/race は成功。次は SSRF 対策（/page・feed・favicon）。
