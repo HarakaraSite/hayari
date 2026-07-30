@@ -1161,3 +1161,11 @@
 - 実施: `v1.2.0` を c006e6e に注釈付きタグで公開。Forgejo Actions run 14、6アセットとSHA256SUMS、ダウンロードしたlinux/arm64版のチェックサム・`--version` を確認した。
 - 次: なし
 - 注意: 実Henji E2Eは外部利用量が発生するため、今回の再実行は省略し、直近成功済みの記録を利用した。
+
+## 2026-07-30 21:32 JST
+
+- 実行エージェント: Codex
+- 作業トピック: v1.2.1 Webログイン認証修正リリース
+- 実施: 未認証のWeb UI入口をフォームログインへ固定し、ログイン用Pico CSSを公開。Playwright E2E、通常/race/vet/JS検査、6対象クロスビルドを成功させ、`v1.2.1` を 4c7189d にタグ・公開した。Forgejo Actions run 15 と6バイナリ・SHA256SUMSを確認し、linux/arm64公開物で版番号・healthz・Cookieログインを再確認した。
+- 次: なし
+- 注意: API／GReaderクライアントのHTTP Basic・ClientLogin互換は維持。公開後の運用記録はこのcheckpointコミットに含まれ、`v1.2.1`タグ自体は直前の修正コミットを指す。
