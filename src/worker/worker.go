@@ -23,7 +23,6 @@ type Worker struct {
 	db      *storage.Storage
 	running atomic.Bool
 	stop    chan struct{}
-	mu      sync.Mutex
 }
 
 func New(db *storage.Storage) *Worker {

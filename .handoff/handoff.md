@@ -1129,3 +1129,11 @@
 - 実施: 不要・現状維持・将来保留・今週末着手予定をタスクリストとRecordsへ反映。Hikae v1.1.1 を `~/.local/bin/hikae` にSHA256検証のうえ配置し、翻訳・詳細クリア（8月1日予定）、favicon再試行（継続検討）、記事順切替・Pico CSS移行（parked）を登録した。
 - 次: 今週末に ISS-20260728-title-translation と ISS-20260728-clear-detail-on-source-change を着手する。ISS-20260728-missing-feed-favicon-retry は継続検討。
 - 注意: 未コミット変更は `.handoff/handoff.md`、`docs/tasks.md`、`docs/yarr-research.md`。`git diff --check` は成功。
+
+## 2026-07-30 15:10 JST
+
+- 実行エージェント: Codex
+- 作業トピック: staticcheck / gosec の初回仕分け
+- 実施: `Worker.mu` の未使用フィールドを削除し、通常テストと staticcheck を通過。gosec 45件をコード上の防御策・実害有無で分類した。
+- 次: 必要なら、実害のあるディレクトリ権限とエラー伝播をまとめて修正する。
+- 注意: gosec の SSRF/XSS 指摘は `safehttp` と favicon MIME allowlist により設計上抑止済み。
