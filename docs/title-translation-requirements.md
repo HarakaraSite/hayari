@@ -54,7 +54,7 @@ AI ボタン開始時は、対象記事の選択と `processing` / claim への�
 - 全ジョブ合計で Henji の同時実行数は最大2件とする。
 - Hayari は shell を介さず `exec.CommandContext` で Henji を起動し、タイトルは標準入力で渡す。APIキー、provider URL、秘密情報は保存・表示・ログ出力しない。
 - Shirushi と同じ起動設定を提供する: `--henji-path`、`--henji-api`、`--henji-model`。Henji が見つからない場合は AI ボタンを表示しない。`--henji-api` と `--henji-model` は必ず対で指定し、片方だけの場合は起動エラーとする。
-- Henji は `-q -a API -m MODEL --no-cache --max-tokens 512 --json-schema SCHEMA --json-schema-retries 0 PROMPT` として起動する。既定値は Shirushi と同じ `henji`、`openrouter`、`google/gemini-2.5-flash-lite` とする。
+- Henji は `-q -a API -m MODEL --no-cache --max-tokens 512 --json-schema SCHEMA_FILE --json-schema-retries 0 PROMPT` として起動する。`SCHEMA_FILE` はHayariが都度作成する非公開のJSON Schemaファイルのパスとする。既定値は Shirushi と同じ `henji`、`openrouter`、`google/gemini-2.5-flash-lite` とする。
 - 1件の実行期限は30秒、タイトル入力はUTF-8で4 KiB、stdoutは4 KiBまでとする。入力が4 KiBを超えるタイトルは切り詰めず、Henji を呼ばずに `failed` とする。stderrは `io.Discard` へ流し、stdout・stderr・プロンプト・provider 応答をログや HTTP レスポンスに含めない。
 - 出力は単一のUTF-8 JSON objectだけを許可する。許可フィールドは `result` と `title` だけとし、`result` は `translated` または `skipped`、`translated` の `title` は空でない500 Unicode文字以下の文字列、`skipped` の `title` は存在しないことを要求する。日本語としての内容判定は Henji の構造化出力契約に委ねる。JSON Schema と Hayari 側の厳密な JSON 検証の両方で検証する。
 - サーバー停止時は新規ジョブの受付を止め、実行中 Henji の context を cancel して完了を待つ。停止期限内に完了しない claim は `pending` へ戻してから DB を閉じる。

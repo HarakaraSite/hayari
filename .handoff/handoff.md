@@ -28,6 +28,14 @@
 
 ## Checkpoints
 
+## 2026-07-30 13:56 JST
+
+- 実行エージェント: Codex
+- 作業トピック: Henji 導入準備
+- 実施: 公式リポジトリの `v2.1.7` タグ（`ec960e68a399df2e96fb6233dfde194fe847eeba`）からビルドし、SHA-256 `508a6762d8a093320d1dd1655bb9e080c7a7e098c50a3d780d22260793d95e81` の `/home/masat.guest/.local/bin/henji` を導入した。実Henji確認で `--json-schema` がファイルパスを要求すると判明したため、Hayariが都度private schema fileを渡すよう修正した。Hayari capability=trueも確認済み。
+- 次: OpenRouterのAPIトークンをHenji側へ登録し、`google/gemini-2.5-flash-lite` のmodel定義をHenji設定へ追加後、実翻訳の任意統合テストを行う。
+- 注意: 既存 `~/.config/henji/henji.yml` は変更していない（0600）。現設定にはHayari既定のOpenRouter model定義がない。
+
 ## 2026-07-30 13:52 JST
 
 - 実行エージェント: Codex

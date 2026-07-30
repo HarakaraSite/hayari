@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -156,7 +157,12 @@ func (m *Manager) translate(title string) (string, string, error) {
 	defer func() { <-m.henji }()
 	ctx, cancel := context.WithTimeout(m.ctx, 30e9)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, m.config.Path, "-q", "-a", m.config.API, "-m", m.config.Model, "--no-cache", "--max-tokens", "512", "--json-schema", schema, "--json-schema-retries", "0", prompt)
+	schemaPath, err := writeSchemaFile()
+	if err != nil {
+		return "", "", err
+	}
+	defer os.Remove(schemaPath)
+	cmd := exec.CommandContext(ctx, m.config.Path, "-q", "-a", m.config.API, "-m", m.config.Model, "--no-cache", "--max-tokens", "512", "--json-schema", schemaPath, "--json-schema-retries", "0", prompt)
 	cmd.Stdin = strings.NewReader(title)
 	var out cappedBuffer
 	out.max = maxOutputBytes
@@ -194,6 +200,26 @@ func (m *Manager) translate(title string) (string, string, error) {
 		return result.Result, *result.Title, nil
 	}
 	return "", "", errors.New("invalid result")
+}
+
+// writeSchemaFile provides Henji with its required schema-file argument. The
+// schema is static and the file is private to this process and invocation.
+func writeSchemaFile() (string, error) {
+	f, err := os.CreateTemp("", "hayari-henji-schema-*.json")
+	if err != nil {
+		return "", err
+	}
+	path := f.Name()
+	if _, err := f.WriteString(schema); err != nil {
+		f.Close()
+		os.Remove(path)
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(path)
+		return "", err
+	}
+	return path, nil
 }
 
 // decodeStrictObject rejects duplicate members as well as trailing JSON values.

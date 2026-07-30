@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"forge.harakara.site/littleisland/hayari/src/storage"
+	"forge.harakara.site/littleisland/hayari/src/titletranslation"
 )
 
 // Helpers reuse newTestServer and buildMux from greader_test.go.
@@ -59,6 +60,7 @@ func TestHealthz(t *testing.T) {
 
 func TestTitleTranslationCapabilityAndUnavailableStart(t *testing.T) {
 	srv, ts := newTestServer(t)
+	srv.translations = titletranslation.New(srv.db, titletranslation.Config{Path: "/does/not/exist/henji"})
 	resp := doRequest(t, ts, http.MethodGet, "/api/capabilities", "")
 	defer resp.Body.Close()
 	var capability struct {

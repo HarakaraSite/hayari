@@ -9,7 +9,7 @@ import (
 func fakeHenji(t *testing.T, output string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "henji")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\ncat >/dev/null\nprintf '%s' \"$HENJI_OUTPUT\"\n"), 0700); err != nil {
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nschema=\nwhile [ \"$#\" -gt 0 ]; do\n  if [ \"$1\" = --json-schema ]; then shift; schema=$1; fi\n  shift\ndone\ntest -f \"$schema\" || exit 2\ngrep -q '\"result\"' \"$schema\" || exit 3\ncat >/dev/null\nprintf '%s' \"$HENJI_OUTPUT\"\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("HENJI_OUTPUT", output)
