@@ -28,6 +28,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 		http.ServeFileFS(w, r, assets.FS, "favicon.svg")
 	}
 	mux.HandleFunc("/favicon.svg", serveFavicon)
+	mux.HandleFunc("/favicon.ico", serveFavicon)
 	mux.HandleFunc("/hayari-mark.svg", serveFavicon)
 	// The login page is public and depends on Pico for its layout. Keep this
 	// one stylesheet public too, otherwise an unauthenticated browser receives

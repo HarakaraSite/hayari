@@ -107,14 +107,18 @@ func TestFaviconIsPublic(t *testing.T) {
 	srv.Username = "user"
 	srv.Password = "pass"
 
-	resp := doRequest(t, ts, http.MethodGet, "/favicon.svg", "")
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want 200", resp.StatusCode)
-	}
-	if got := resp.Header.Get("Content-Type"); !strings.HasPrefix(got, "image/svg+xml") {
-		t.Errorf("Content-Type = %q, want image/svg+xml", got)
+	for _, path := range []string{"/favicon.svg", "/favicon.ico", "/hayari-mark.svg"} {
+		resp := doRequest(t, ts, http.MethodGet, path, "")
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			t.Fatalf("%s: status = %d, want 200", path, resp.StatusCode)
+		}
+		if got := resp.Header.Get("Content-Type"); !strings.HasPrefix(got, "image/svg+xml") {
+			resp.Body.Close()
+			t.Errorf("%s: Content-Type = %q, want image/svg+xml", path, got)
+			continue
+		}
+		resp.Body.Close()
 	}
 }
 
