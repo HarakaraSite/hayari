@@ -28,6 +28,14 @@
 
 ## Checkpoints
 
+## 2026-07-30 14:09 JST
+
+- 実行エージェント: Codex
+- 作業トピック: Henji OpenRouter model 定義
+- 実施: `~/.config/henji/henji.yml` の `openrouter.models` に `google/gemini-2.5-flash-lite` と aliases、4,000,000 input chars、4,096 completion tokensを追加し、Henjiのmodel選択を確認した。
+- 次: OpenRouter APIトークンをHenji側へ登録し、実翻訳の任意統合テストを行う。
+- 注意: APIトークンには触れていない。設定ファイルは0600を維持。
+
 ## 2026-07-30 13:56 JST
 
 - 実行エージェント: Codex
