@@ -28,6 +28,14 @@
 
 ## Checkpoints
 
+## 2026-07-30 14:56 JST
+
+- 実行エージェント: Codex
+- 作業トピック: 本番相当Henji実翻訳
+- 実施: 専用 `hayari:hayari` ユーザー、`HOME=/var/lib/hayari`、`/usr/local/bin/henji`、root非依存のHenji config / secret permissionsを整えた。OpenRouter経由で1件のHayari翻訳を実行し、`202 {"accepted":1}`後に原文を保持した翻訳タイトル `RSSリーダーの実践ガイド` が `translated` として保存されることを確認した。
+- 次: Hayari本体の実運用配置・起動管理は利用者が選ぶ方式で設定する。
+- 注意: 実翻訳は外部API呼び出し・利用量を1件発生させた。テストDB・一時バイナリは削除済み。`/var/lib/hayari` にはHenji設定と秘密ファイルだけを残している。
+
 ## 2026-07-30 14:09 JST
 
 - 実行エージェント: Codex
