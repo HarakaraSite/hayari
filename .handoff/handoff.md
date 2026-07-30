@@ -1169,3 +1169,11 @@
 - 実施: 未認証のWeb UI入口をフォームログインへ固定し、ログイン用Pico CSSを公開。Playwright E2E、通常/race/vet/JS検査、6対象クロスビルドを成功させ、`v1.2.1` を 4c7189d にタグ・公開した。Forgejo Actions run 15 と6バイナリ・SHA256SUMSを確認し、linux/arm64公開物で版番号・healthz・Cookieログインを再確認した。
 - 次: なし
 - 注意: API／GReaderクライアントのHTTP Basic・ClientLogin互換は維持。公開後の運用記録はこのcheckpointコミットに含まれ、`v1.2.1`タグ自体は直前の修正コミットを指す。
+
+## 2026-07-30 21:44 JST
+
+- 実行エージェント: Codex
+- 作業トピック: v1.2.2 favicon公開修正リリース
+- 実施: `/favicon.ico` を未認証でSVG faviconとして配信するよう修正し、`v1.2.2` を 3874760 にタグ・公開した。FJA `ci status --tag v1.2.2` でForgejo Actions run 16の完全一致・成功を確認し、6アセットとSHA256SUMS、linux/arm64版の埋め込み版番号を検証した。
+- 次: なし
+- 注意: FJAはCI監視に使用する。任意Release assetの取得は未対応のため、公開物再検証ではcurlを用いた。
