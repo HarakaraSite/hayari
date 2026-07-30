@@ -201,7 +201,7 @@
 ### 追加機能
 - [x] Fever API は対応しない（FreshRSS / Google Reader API の現行互換を維持）
 - [x] Readability 抽出品質の改善は現時点では行わない（具体的な問題が出た場合に再検討）
-- [ ] 未取得フィードfaviconの再試行を検討（起動時に `icon IS NULL` のフィードを再取得する案。既存faviconの手動更新は必要性が出た場合に併せて検討）
+- [x] 未取得フィードfaviconの自動再試行は追加しない。必要時はフィードを再登録し、取得不能時の UI 表示は Hayari マークへフォールバックする
 - [x] フィード別更新間隔は追加しない（全フィード共通の `refresh_rate` を維持）
 - [x] 設定の import / export は追加しない（フィード・フォルダ移行は既存の OPML import / export を維持）
 

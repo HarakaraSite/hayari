@@ -159,11 +159,10 @@ func (w *Worker) refreshFeed(feed storage.Feed) {
 	}
 	w.db.UpdateFeedRefresh(feed.ID, lm, etag)
 
-	// Fetch favicon once when not yet stored
-	siteURL := parsed.SiteURL
-	if siteURL == "" {
-		siteURL = feed.SiteURL
-	}
+	// Fetch favicon once when not yet stored. Some Atom feeds, including the
+	// Go Blog, only expose a rel="self" feed URL and no site URL. In that case
+	// the feed URL still gives FetchFavicon the correct origin for /favicon.ico.
+	siteURL := faviconSourceURL(parsed.SiteURL, feed.SiteURL, feed.FeedURL)
 	if feed.Icon == nil && siteURL != "" {
 		go w.fetchAndStoreFavicon(feed.ID, siteURL)
 	}
@@ -193,6 +192,16 @@ func (w *Worker) refreshFeed(feed storage.Feed) {
 			log.Printf("worker: insert items for %s: %v", feed.FeedURL, err)
 		}
 	}
+}
+
+func faviconSourceURL(parsedSiteURL, storedSiteURL, feedURL string) string {
+	if parsedSiteURL != "" {
+		return parsedSiteURL
+	}
+	if storedSiteURL != "" {
+		return storedSiteURL
+	}
+	return feedURL
 }
 
 func (w *Worker) fetchAndStoreFavicon(feedID int64, siteURL string) {

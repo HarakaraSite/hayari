@@ -1,11 +1,18 @@
 package worker
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
 
 func TestFindFeedsUsesRSSUserAgentAndExtractsRelativeLinks(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -54,6 +61,67 @@ func TestExtractFeedLinksRequiresFeedMIMEType(t *testing.T) {
 		if feeds[i] != want[i] {
 			t.Errorf("feed[%d] = %#v, want %#v", i, feeds[i], want[i])
 		}
+	}
+}
+
+func TestExtractFeedLinksAddsYouTubeChannelVariants(t *testing.T) {
+	feeds, err := extractFeedLinks(strings.NewReader(`<!doctype html><head>
+		<link rel="alternate" type="application/atom+xml" title="Google Developers" href="https://www.youtube.com/feeds/videos.xml?channel_id=UC_x5XG1OV2P6uZZ5FSM9Ttw">
+	</head>`), "https://www.youtube.com/@GoogleDevelopers")
+	if err != nil {
+		t.Fatal(err)
+	}
+	feeds = expandYouTubeFeedVariants(feeds)
+
+	want := []FoundFeed{
+		{URL: "https://www.youtube.com/feeds/videos.xml?channel_id=UC_x5XG1OV2P6uZZ5FSM9Ttw", Title: "All"},
+		{URL: "https://www.youtube.com/feeds/videos.xml?playlist_id=UULF_x5XG1OV2P6uZZ5FSM9Ttw", Title: "Videos"},
+		{URL: "https://www.youtube.com/feeds/videos.xml?playlist_id=UULV_x5XG1OV2P6uZZ5FSM9Ttw", Title: "Live Streams"},
+		{URL: "https://www.youtube.com/feeds/videos.xml?playlist_id=UUSH_x5XG1OV2P6uZZ5FSM9Ttw", Title: "Shorts"},
+	}
+	if len(feeds) != len(want) {
+		t.Fatalf("feed count = %d, want %d: %#v", len(feeds), len(want), feeds)
+	}
+	for i := range want {
+		if feeds[i] != want[i] {
+			t.Errorf("feed[%d] = %#v, want %#v", i, feeds[i], want[i])
+		}
+	}
+}
+
+func TestYouTubeFeedVariantsForDirectChannelRSS(t *testing.T) {
+	got := youtubeFeedVariants(FoundFeed{URL: "https://www.youtube.com/feeds/videos.xml?channel_id=UC_x5XG1OV2P6uZZ5FSM9Ttw"})
+	if len(got) != 4 {
+		t.Fatalf("variant count = %d, want 4: %#v", len(got), got)
+	}
+	if got[0].Title != "All" || got[3].Title != "Shorts" {
+		t.Errorf("variants = %#v, want All through Shorts", got)
+	}
+}
+
+func TestFindFeedsAddsVariantsForDirectYouTubeChannelRSS(t *testing.T) {
+	const channelURL = "https://www.youtube.com/feeds/videos.xml?channel_id=UC_x5XG1OV2P6uZZ5FSM9Ttw"
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.String() != channelURL {
+			t.Errorf("request URL = %q, want %q", r.URL, channelURL)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`<feed xmlns="http://www.w3.org/2005/Atom"><link rel="self" href="` + channelURL + `"/></feed>`)),
+			Request:    r,
+		}, nil
+	})}
+
+	feeds, err := findFeeds(client, channelURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(feeds) != 4 {
+		t.Fatalf("feed count = %d, want 4: %#v", len(feeds), feeds)
+	}
+	if feeds[0].Title != "All" || feeds[3].Title != "Shorts" {
+		t.Errorf("variants = %#v, want All through Shorts", feeds)
 	}
 }
 

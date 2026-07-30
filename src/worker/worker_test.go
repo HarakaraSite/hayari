@@ -250,6 +250,27 @@ func TestRefreshFeedNoDuplicates(t *testing.T) {
 	}
 }
 
+func TestFaviconSourceURL(t *testing.T) {
+	tests := []struct {
+		name                         string
+		parsedSiteURL, storedSiteURL string
+		feedURL                      string
+		want                         string
+	}{
+		{"parsed site URL", "https://parsed.example", "https://stored.example", "https://feed.example/feed.xml", "https://parsed.example"},
+		{"stored site URL", "", "https://stored.example", "https://feed.example/feed.xml", "https://stored.example"},
+		{"feed URL", "", "", "https://feed.example/feed.xml", "https://feed.example/feed.xml"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := faviconSourceURL(tt.parsedSiteURL, tt.storedSiteURL, tt.feedURL); got != tt.want {
+				t.Errorf("faviconSourceURL() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // --- RefreshAll ---
 
 func TestRefreshAll(t *testing.T) {
@@ -340,6 +361,34 @@ func TestFetchFaviconFallback(t *testing.T) {
 	}
 }
 
+func TestFetchFaviconTriesLaterIconCandidate(t *testing.T) {
+	png1x1 := []byte{0x89, 0x50, 0x4e, 0x47}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprint(w, `<html><head><link rel="icon" href="/missing.png"><link rel="icon" href="/icon.png"></head></html>`)
+		case "/missing.png":
+			http.NotFound(w, r)
+		case "/icon.png":
+			w.Header().Set("Content-Type", "image/png")
+			w.Write(png1x1)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	dataURL, err := FetchFavicon(srv.URL)
+	if err != nil {
+		t.Fatalf("FetchFavicon: %v", err)
+	}
+	if !strings.HasPrefix(dataURL, "data:image/png;base64,") {
+		t.Errorf("dataURL = %q, want data:image/png;base64,... prefix", dataURL[:40])
+	}
+}
+
 func TestFetchFaviconUnsupportedType(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -356,6 +405,26 @@ func TestFetchFaviconUnsupportedType(t *testing.T) {
 	_, err := FetchFavicon(srv.URL)
 	if err == nil {
 		t.Error("FetchFavicon should return error for unsupported MIME type")
+	}
+}
+
+func TestFetchFaviconRejectsEmptyIcon(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprint(w, `<html><head></head></html>`)
+		case "/favicon.ico":
+			w.Header().Set("Content-Type", "image/x-icon")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	_, err := FetchFavicon(srv.URL)
+	if err == nil || !strings.Contains(err.Error(), "empty icon response") {
+		t.Fatalf("FetchFavicon error = %v, want empty icon response", err)
 	}
 }
 

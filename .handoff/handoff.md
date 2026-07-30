@@ -16,16 +16,48 @@
 - POL-20260728-settings-transfer: 設定の import / export は追加しない。フィード・フォルダ移行は既存の OPML import / export を維持する。
 - POL-20260728-theme-scope: 追加テーマは将来機能として保留する。現行の auto / light / dark を維持する。
 - POL-20260728-j-navigation: `j` / `k` による記事移動は現状維持とする。選択、スクロール、未読記事の既読化の挙動は変更しない。
+- POL-20260730-favicon-retry: 未取得フィードfaviconの自動再試行は追加しない。必要時はフィードを再登録し、取得不能時の UI は Hayari マークを表示する。
 
 ### 未決事項
-- ISS-20260728-missing-feed-favicon-retry: 未取得フィードfaviconの再試行方法を継続検討する。起動時に `icon IS NULL` のフィードを別途走査する案がある。通常の起動時フィード更新では304応答時にfavicon取得まで到達しない。
-- ISS-20260729-youtube-feed-variants: YouTube チャンネル URL の検出時、通常の channel RSS（All）に加え、`UC` を `UULF`／`UULV`／`UUSH` へ置換した Videos／Live Streams／Short videos の playlist RSS を候補として提示する将来機能。Yarr の `src/content/scraper/finder.go` と同様に、既定での自動置換はせず利用者が選択する。
 - ISS-20260728-title-translation: 英語フィードの記事タイトルを日本語表示する将来機能。今週末に着手予定で、今日は実装しない。開始時に翻訳サービス、認証情報、利用制限、失敗時の原文フォールバックを設計する。
 
 ### ユーザー判断待ち
 - なし
 
 ## Checkpoints
+
+## 2026-07-30 11:19 JST
+
+- 実行エージェント: Codex
+- 作業トピック: YouTube フィード種別の候補選択
+- 実施: チャンネル RSS 検出時に All／Videos／Live Streams／Shorts の4候補を生成し、既存の候補選択 UI で選べるよう実装した。実際の YouTube チャンネルページで Playwright 確認済み。
+- 次: なし
+- 注意: 直接入力した playlist RSS は候補生成せず、その URL をそのまま購読する。
+
+## 2026-07-30 11:16 JST
+
+- 実行エージェント: Codex
+- 作業トピック: favicon 取得不能時の扱い
+- 実施: 複数 icon 候補の順次取得、Atom フィード URL からの favicon フォールバック、空レスポンス拒否、UI の Hayari マーク表示を実装。POL-20260730-favicon-retry を確定した。
+- 次: なし
+- 注意: 実アイコンの再取得が必要な場合はフィードを再登録する。
+
+## 2026-07-30 11:16 JST
+
+- 実行エージェント: Codex
+- 作業トピック: フィード URL の確認表示
+- 実施: フィード編集ダイアログに `feed_url` を読み取り専用で表示し、Playwright で確認した。
+- 次: ISS-20260729-youtube-feed-variants の着手要否を判断する。
+- 注意: URL の編集機能は提供しない。
+
+## 2026-07-29 19:33 JST
+
+- 実行エージェント: Codex
+- モデル: 不明
+- 作業トピック: フィード編集での購読 URL 表示
+- 実施: edit feed ダイアログに登録済み `feed_url` を確認表示する将来機能を ISS-20260729-edit-feed-url-display として記録した。
+- 次: 読み取り専用の URL 表示をダイアログへ追加する。
+- 注意: URL の編集機能は提供しない。
 
 ## 2026-07-29 19:26 JST
 

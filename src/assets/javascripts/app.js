@@ -250,7 +250,12 @@ const App = (() => {
     img.src = `/api/feeds/${feed.id}/icon`;
     img.width = 16; img.height = 16;
     img.alt = '';
-    img.onerror = () => { img.style.display = 'none'; };
+    img.onerror = () => {
+      // Keep the feed list aligned and recognizable when a site does not
+      // provide a usable favicon.
+      img.onerror = null;
+      img.src = '/hayari-mark.svg';
+    };
 
     row.appendChild(img);
     row.insertAdjacentHTML('beforeend', `<span class="feed-name">${escHTML(feed.title || feed.feed_url)}</span>`);
@@ -772,6 +777,9 @@ const App = (() => {
 
     modalManageBody.innerHTML =
       `<form id="form-edit-feed">
+        <label>Feed URL
+          <input type="url" value="${encHTML(feed.feed_url)}" readonly />
+        </label>
         <label>Name
           <input type="text" name="title" value="${encHTML(feed.title || '')}" />
         </label>

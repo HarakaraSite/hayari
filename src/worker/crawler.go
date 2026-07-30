@@ -42,7 +42,16 @@ func findFeeds(client *http.Client, pageURL string) ([]FoundFeed, error) {
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, pageURL)
 	}
 
-	return extractFeedLinks(io.LimitReader(resp.Body, 2<<20), pageURL)
+	feeds, err := extractFeedLinks(io.LimitReader(resp.Body, 2<<20), pageURL)
+	if err != nil {
+		return nil, err
+	}
+	if len(feeds) == 0 {
+		// A directly entered YouTube channel RSS document does not advertise
+		// itself with a feed MIME type, but its URL is enough to offer variants.
+		return youtubeFeedVariants(FoundFeed{URL: pageURL}), nil
+	}
+	return expandYouTubeFeedVariants(feeds), nil
 }
 
 func extractFeedLinks(r io.Reader, baseURL string) ([]FoundFeed, error) {
@@ -95,6 +104,45 @@ func extractFeedLinks(r io.Reader, baseURL string) ([]FoundFeed, error) {
 	return feeds, nil
 }
 
+// expandYouTubeFeedVariants adds selectable YouTube playlist feeds for each
+// discovered channel RSS feed. It never replaces the channel's All feed.
+func expandYouTubeFeedVariants(feeds []FoundFeed) []FoundFeed {
+	result := make([]FoundFeed, 0, len(feeds)+3)
+	for _, feed := range feeds {
+		if variants := youtubeFeedVariants(feed); len(variants) > 0 {
+			result = append(result, variants...)
+			continue
+		}
+		result = append(result, feed)
+	}
+	return result
+}
+
+func youtubeFeedVariants(feed FoundFeed) []FoundFeed {
+	u, err := url.Parse(feed.URL)
+	if err != nil || (u.Hostname() != "youtube.com" && u.Hostname() != "www.youtube.com") || u.Path != "/feeds/videos.xml" {
+		return nil
+	}
+
+	channelID := u.Query().Get("channel_id")
+	if !strings.HasPrefix(channelID, "UC") || len(channelID) == len("UC") {
+		return nil
+	}
+
+	playlistURL := func(prefix string) string {
+		playlist := *u
+		playlist.RawQuery = url.Values{"playlist_id": {prefix + strings.TrimPrefix(channelID, "UC")}}.Encode()
+		return playlist.String()
+	}
+
+	return []FoundFeed{
+		{URL: feed.URL, Title: "All"},
+		{URL: playlistURL("UULF"), Title: "Videos"},
+		{URL: playlistURL("UULV"), Title: "Live Streams"},
+		{URL: playlistURL("UUSH"), Title: "Shorts"},
+	}
+}
+
 func isFeedType(typ string) bool {
 	mediaType, _, err := mime.ParseMediaType(typ)
 	if err != nil {
@@ -144,7 +192,7 @@ func FetchFavicon(siteURL string) (string, error) {
 	if err == nil {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1MB limit
 		resp.Body.Close()
-		if iconURL := findFaviconURL(bytes.NewReader(body), base); iconURL != "" {
+		for _, iconURL := range findFaviconURLs(bytes.NewReader(body), base) {
 			if dataURL, err := fetchAsDataURL(iconURL); err == nil {
 				return dataURL, nil
 			}
@@ -156,9 +204,13 @@ func FetchFavicon(siteURL string) (string, error) {
 	return fetchAsDataURL(faviconURL)
 }
 
-// findFaviconURL parses HTML and returns the first icon <link> href, resolved to absolute.
-func findFaviconURL(r io.Reader, base *url.URL) string {
+// findFaviconURLs parses HTML and returns icon <link> hrefs, resolved to absolute.
+// A page can provide multiple icon sizes; callers should try each because an advertised
+// derivative can be missing even when the original icon is available.
+func findFaviconURLs(r io.Reader, base *url.URL) []string {
 	z := html.NewTokenizer(r)
+	var iconURLs []string
+	seen := make(map[string]struct{})
 	for {
 		tt := z.Next()
 		if tt == html.ErrorToken {
@@ -185,10 +237,14 @@ func findFaviconURL(r io.Reader, base *url.URL) string {
 			}
 		}
 		if strings.Contains(rel, "icon") && href != "" {
-			return resolveURL(base, href)
+			iconURL := resolveURL(base, href)
+			if _, ok := seen[iconURL]; !ok {
+				seen[iconURL] = struct{}{}
+				iconURLs = append(iconURLs, iconURL)
+			}
 		}
 	}
-	return ""
+	return iconURLs
 }
 
 // fetchAsDataURL downloads an image URL and returns it as a base64 data URL.
@@ -219,6 +275,9 @@ func fetchAsDataURL(iconURL string) (string, error) {
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024)) // 512KB limit
 	if err != nil {
 		return "", err
+	}
+	if len(data) == 0 {
+		return "", fmt.Errorf("empty icon response")
 	}
 
 	return "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data), nil
