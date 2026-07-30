@@ -54,6 +54,29 @@ make build-gui
 ./hayari --addr 127.0.0.1:7070 --db path/to/hayari.db --user your-user --pass your-password
 ```
 
+### 任意: Henji による記事タイトル翻訳
+
+Hayari は、[Henji](https://forge.harakara.site/littleisland/henji) を通じて、未読記事の英語タイトルを日本語へ翻訳できます。Henji は任意の外部コマンドです。provider の認証情報を Henji 側で設定したうえで、Hayari は PATH 上の `henji`（または `--henji-path` で指定したパス）を使います。Henji が見つからない場合は「AI」ボタンを表示せず、通常の Hayari 機能はそのまま使えます。
+
+Henji の API キーや provider 設定は Henji 側で管理します。Hayari はそれらを読み取り・保存・公開しません。Web UI で翻訳を確認すると、対象となる未読タイトル（最大50件）が Henji に設定した provider へ送信されます。
+
+既定値は `openrouter / google/gemini-2.5-flash-lite` です。
+
+```sh
+# PATH上のhenjiを使う
+./hayari --henji-path henji
+
+# 実行ファイルの場所を指定する
+./hayari --henji-path /opt/bin/henji
+
+# provider と model を対で上書きする
+./hayari --henji-api openrouter --henji-model example/model
+```
+
+`--henji-api` と `--henji-model` は必ず対で指定します。翻訳は選択中フィードの AI ボタンから手動で開始し、バックグラウンドで実行されます。進捗・完了通知はないため、後で一覧を再読み込みして翻訳済みタイトルを確認してください。失敗またはスキップしたタイトルは原文のまま表示されます。
+
+翻訳済みタイトルの表示と、原文・翻訳文の両方を対象とする検索は Hayari の Web UI だけに適用します。FreshRSS / Google Reader 互換クライアントには、従来どおり原文タイトルを返します。
+
 ## 安全な公開方法
 
 Hayari 自体は TLS を提供しません。Caddy や nginx など、TLS を終端する

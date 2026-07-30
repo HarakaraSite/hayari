@@ -55,6 +55,41 @@ make build-gui
 ./hayari --addr 127.0.0.1:7070 --db path/to/hayari.db --user your-user --pass your-password
 ```
 
+### Optional: title translation with Henji
+
+Hayari can translate unread article titles from English to Japanese through
+[Henji](https://forge.harakara.site/littleisland/henji). Henji is an optional
+external command: configure its provider credentials separately, then Hayari
+uses `henji` on `PATH` (or a path supplied with `--henji-path`). If it is not
+available, the **AI** button is hidden and all other Hayari features continue
+to work normally.
+
+Henji's API key and provider configuration stay in Henji. Hayari never reads,
+stores, or exposes them. When you confirm translation in the Web UI, eligible
+unread titles (up to 50) are sent to the provider configured in Henji.
+
+By default, Hayari uses `openrouter / google/gemini-2.5-flash-lite`:
+
+```sh
+# Use henji on PATH
+./hayari --henji-path henji
+
+# Use a specific Henji executable
+./hayari --henji-path /opt/bin/henji
+
+# Override provider and model together
+./hayari --henji-api openrouter --henji-model example/model
+```
+
+`--henji-api` and `--henji-model` must be supplied together. Translation is
+started manually from the AI button for a selected feed, runs in the background,
+and has no progress or completion notification. Reload the list later to see
+translated titles. Failed or skipped titles remain in their original language.
+
+Only Hayari's Web UI displays translated titles and searches both original and
+translated titles. FreshRSS / Google Reader-compatible clients continue to
+receive the original title.
+
 ## Secure deployment
 
 Hayari does not provide TLS itself. Run it only behind a TLS-terminating reverse proxy such as Caddy or nginx:
