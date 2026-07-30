@@ -28,6 +28,14 @@
 
 ## Checkpoints
 
+## 2026-07-30 14:59 JST
+
+- 実行エージェント: Codex
+- 作業トピック: 実Henjiタイトル翻訳E2E
+- 実施: `live_henji` build tag と `HAYARI_LIVE_HENJI_TEST=1` が揃う場合だけ実行するE2Eを追加。英語1件の翻訳、日本語のローカルskip、英語2件の同一ジョブ翻訳を `hayari` ユーザーの実Henji/OpenRouter構成で成功確認した。
+- 次: 必要時だけ docs/e2e-smoke.md の手順で実行する。
+- 注意: 1回のlive E2Eは英語タイトル3件を外部providerへ送信し、利用量が発生する。一時テストバイナリは削除済み。
+
 ## 2026-07-30 14:56 JST
 
 - 実行エージェント: Codex

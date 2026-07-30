@@ -108,6 +108,32 @@ echo 'E2E smoke: PASS'
 - Reeder / NetNewsWire の実機互換性
 - UI のブラウザ操作・レスポンシブ表示
 
+## 任意: 実 Henji タイトル翻訳 E2E
+
+`live_henji` build tag のテストは、設定済み Henji を実行して OpenRouter へ英語タイトルを3件送信します。通常の `go test ./...` には含まれません。API利用量が発生するため、意図して実行する場合だけ次を使います。
+
+本番相当の `hayari` ユーザー・Henji設定を使う例:
+
+```sh
+go test -tags live_henji -c -o /tmp/hayari-live-henji-test ./src/server
+sudo -u hayari env \
+  HOME=/var/lib/hayari \
+  XDG_CONFIG_HOME=/var/lib/hayari/.config \
+  XDG_DATA_HOME=/var/lib/hayari/.local/share \
+  HAYARI_LIVE_HENJI_TEST=1 \
+  HAYARI_HENJI_PATH=/usr/local/bin/henji \
+  /tmp/hayari-live-henji-test -test.v -test.run '^TestLiveHenjiTitleTranslation$'
+unlink /tmp/hayari-live-henji-test
+```
+
+このテストは次を確認します。
+
+- 英語タイトル1件が `translated` として保存される
+- 日本語だけのタイトルは Henji を呼ばず `skipped` になる
+- 英語タイトル2件を同一フィードの1ジョブで順に翻訳できる
+
+トークン、Henjiの標準出力・標準エラー、provider応答はテストログに出力しません。
+
 ## ブラウザ手動 smoke（2026-07-10 実施済み）
 
 ローカル起動後に 2NN RSS（`https://www.2nn.jp/rss/index.rdf`）を追加し、次を確認した。
