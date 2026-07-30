@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"sync"
@@ -106,13 +107,17 @@ func (s *Server) newHTTPServer(handler http.Handler) *http.Server {
 }
 
 func (s *Server) Stop() {
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
 	if s.translations != nil {
-		s.translations.Stop()
+		if err := s.translations.Stop(ctx); err != nil {
+			log.Printf("title translation shutdown: %v", err)
+		}
 	}
 	s.worker.Stop()
 	if s.http != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cancel()
-		s.http.Shutdown(ctx)
+		if err := s.http.Shutdown(ctx); err != nil {
+			log.Printf("HTTP shutdown: %v", err)
+		}
 	}
 }

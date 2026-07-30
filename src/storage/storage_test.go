@@ -64,6 +64,27 @@ func TestTitleTranslationClaimAndSearch(t *testing.T) {
 	}
 }
 
+func TestTitleTranslationStateConstraints(t *testing.T) {
+	s := newTestDB(t)
+	feed, err := s.CreateFeed("https://example.com/constraints.xml", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateItems([]Item{{FeedID: feed.ID, GUID: "item", Title: "Title", Date: time.Now()}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{
+		`UPDATE items SET title_translation_state = 'unknown'`,
+		`UPDATE items SET title_translation_state = 'translated'`,
+		`UPDATE items SET title_translation_state = 'processing'`,
+		`UPDATE items SET title_translation_claim = 'claim'`,
+	} {
+		if _, err := s.db.Exec(query); err == nil {
+			t.Errorf("invalid state accepted: %s", query)
+		}
+	}
+}
+
 func TestTitleSearchMigrationRebuildsExistingIndex(t *testing.T) {
 	f, err := os.CreateTemp("", "hayari-search-migration-*.db")
 	if err != nil {

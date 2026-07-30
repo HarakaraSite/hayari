@@ -92,12 +92,19 @@ func (m *Manager) run(claim string, items []storage.Item) {
 			_ = m.db.SetTitleTranslationResult(item.ID, claim, storage.TitleTranslationPending, nil)
 			continue
 		}
+		if len([]byte(item.Title)) > maxInputBytes || !utf8.ValidString(item.Title) {
+			_ = m.db.SetTitleTranslationResult(item.ID, claim, storage.TitleTranslationFailed, nil)
+			continue
+		}
 		if !hasLatin(item.Title) {
 			_ = m.db.SetTitleTranslationResult(item.ID, claim, storage.TitleTranslationSkipped, nil)
 			continue
 		}
 		result, title, err := m.translate(item.Title)
 		if err != nil {
+			if m.ctx.Err() != nil {
+				return
+			}
 			_ = m.db.SetTitleTranslationResult(item.ID, claim, storage.TitleTranslationFailed, nil)
 			continue
 		}
@@ -161,16 +168,26 @@ func (m *Manager) translate(title string) (string, string, error) {
 	if !utf8.Valid(out.Bytes()) {
 		return "", "", errors.New("invalid utf8 output")
 	}
-	var result henjiResult
-	dec := json.NewDecoder(bytes.NewReader(out.Bytes()))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&result); err != nil {
+	raw, err := decodeStrictObject(out.Bytes())
+	if err != nil {
 		return "", "", err
 	}
-	if dec.Decode(&struct{}{}) != io.EOF {
-		return "", "", errors.New("extra JSON output")
+	if len(raw) < 1 || len(raw) > 2 || raw["result"] == nil {
+		return "", "", errors.New("invalid result fields")
+	}
+	for key := range raw {
+		if key != "result" && key != "title" {
+			return "", "", errors.New("unknown result field")
+		}
+	}
+	var result henjiResult
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		return "", "", err
 	}
 	if result.Result == "skipped" && result.Title == nil {
+		if _, present := raw["title"]; present {
+			return "", "", errors.New("skipped result has title")
+		}
 		return result.Result, "", nil
 	}
 	if result.Result == "translated" && result.Title != nil && strings.TrimSpace(*result.Title) != "" && utf8.RuneCountInString(*result.Title) <= maxTitleRunes {
@@ -178,14 +195,73 @@ func (m *Manager) translate(title string) (string, string, error) {
 	}
 	return "", "", errors.New("invalid result")
 }
-func (m *Manager) Stop() {
+
+// decodeStrictObject rejects duplicate members as well as trailing JSON values.
+func decodeStrictObject(data []byte) (map[string]json.RawMessage, error) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	token, err := dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	delim, ok := token.(json.Delim)
+	if !ok || delim != '{' {
+		return nil, errors.New("result is not an object")
+	}
+	object := make(map[string]json.RawMessage)
+	for dec.More() {
+		token, err := dec.Token()
+		if err != nil {
+			return nil, err
+		}
+		key, ok := token.(string)
+		if !ok {
+			return nil, errors.New("invalid result key")
+		}
+		if _, exists := object[key]; exists {
+			return nil, errors.New("duplicate result field")
+		}
+		var value json.RawMessage
+		if err := dec.Decode(&value); err != nil {
+			return nil, err
+		}
+		object[key] = value
+	}
+	if token, err := dec.Token(); err != nil {
+		return nil, err
+	} else if delim, ok := token.(json.Delim); !ok || delim != '}' {
+		return nil, errors.New("invalid result object")
+	}
+	if token, err := dec.Token(); err != io.EOF || token != nil {
+		return nil, errors.New("extra JSON output")
+	}
+	return object, nil
+}
+
+// Stop closes admission, cancels running Henji processes and releases claims.
+func (m *Manager) Stop(ctx context.Context) error {
 	if m == nil {
-		return
+		return nil
 	}
 	m.mu.Lock()
 	m.stopping = true
 	m.mu.Unlock()
 	m.cancel()
-	m.wg.Wait()
-	_ = m.db.ReleaseProcessingTitleTranslations()
+	done := make(chan struct{})
+	go func() { m.wg.Wait(); close(done) }()
+	timedOut := false
+	select {
+	case <-done:
+	case <-ctx.Done():
+		// Do not return while a worker may still use SQLite: Server.Stop is
+		// followed by db.Close. Henji has already received cancellation.
+		timedOut = true
+		<-done
+	}
+	if err := m.db.ReleaseProcessingTitleTranslations(); err != nil {
+		return err
+	}
+	if timedOut {
+		return ctx.Err()
+	}
+	return nil
 }

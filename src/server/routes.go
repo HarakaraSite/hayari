@@ -2,8 +2,10 @@ package server
 
 import (
 	"crypto/md5"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -305,7 +307,11 @@ func (s *Server) handleFeedTitleTranslations(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if _, err := s.db.GetFeed(feedID); err != nil {
-		http.NotFound(w, r)
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+		} else {
+			httpError(w, err, http.StatusInternalServerError)
+		}
 		return
 	}
 	accepted, err := s.translations.Start(feedID)

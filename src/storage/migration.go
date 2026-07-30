@@ -93,6 +93,20 @@ var migrations = []string{
 	`ALTER TABLE items ADD COLUMN title_translation_claim TEXT`,
 	// 28
 	`CREATE INDEX IF NOT EXISTS idx_items_title_translation_claim ON items(title_translation_claim)`,
+	// 29: title translation state invariants for all future writes.
+	`CREATE TRIGGER items_title_translation_insert
+	BEFORE INSERT ON items
+	WHEN NEW.title_translation_state NOT IN ('pending', 'processing', 'translated', 'skipped', 'failed')
+	  OR (NEW.title_translation_state = 'translated') != (NEW.translated_title IS NOT NULL)
+	  OR (NEW.title_translation_state = 'processing') != (NEW.title_translation_claim IS NOT NULL)
+	BEGIN SELECT RAISE(ABORT, 'invalid title translation state'); END`,
+	// 30
+	`CREATE TRIGGER items_title_translation_update
+	BEFORE UPDATE OF translated_title, title_translation_state, title_translation_claim ON items
+	WHEN NEW.title_translation_state NOT IN ('pending', 'processing', 'translated', 'skipped', 'failed')
+	  OR (NEW.title_translation_state = 'translated') != (NEW.translated_title IS NOT NULL)
+	  OR (NEW.title_translation_state = 'processing') != (NEW.title_translation_claim IS NOT NULL)
+	BEGIN SELECT RAISE(ABORT, 'invalid title translation state'); END`,
 }
 
 func (s *Storage) migrate() error {
