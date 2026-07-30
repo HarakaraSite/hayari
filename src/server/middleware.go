@@ -27,9 +27,10 @@ func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		// Redirect browser requests to login page
-		accept := r.Header.Get("Accept")
-		if r.Header.Get("X-Requested-With") == "" && len(accept) > 0 && accept[0] == 't' {
+		// The Web UI entry point always uses the form login. Do not infer a
+		// browser from Accept: subresource requests such as text/css also use
+		// that header, and browser navigation headers vary.
+		if r.URL.Path == "/" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
 			http.Redirect(w, r, "/login", http.StatusFound)
 			return
 		}

@@ -118,6 +118,65 @@ func TestFaviconIsPublic(t *testing.T) {
 	}
 }
 
+func TestUnauthenticatedWebLoginDoesNotChallengeBasicAuth(t *testing.T) {
+	srv, ts := newTestServer(t)
+	srv.Username = "user"
+	srv.Password = "pass"
+
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	request := func(path string) *http.Response {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodGet, ts.URL+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+
+	// The entry point must always lead to the form login, even if a browser
+	// uses a non-HTML Accept header for its first navigation.
+	resp := request("/")
+	if resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != "/login" {
+		resp.Body.Close()
+		t.Fatalf("GET / = %d Location %q, want 302 /login", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	if got := resp.Header.Get("WWW-Authenticate"); got != "" {
+		resp.Body.Close()
+		t.Fatalf("GET / sent Basic challenge %q", got)
+	}
+	resp.Body.Close()
+
+	// The public login page can load its only external stylesheet.
+	resp = request("/stylesheets/pico.min.css")
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("GET login stylesheet = %d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Application assets and API endpoints remain protected for clients that
+	// use HTTP Basic authentication.
+	resp = request("/stylesheets/app.css")
+	if resp.StatusCode != http.StatusUnauthorized || resp.Header.Get("WWW-Authenticate") == "" {
+		resp.Body.Close()
+		t.Fatalf("GET application stylesheet = %d Basic %q, want 401 with challenge", resp.StatusCode, resp.Header.Get("WWW-Authenticate"))
+	}
+	resp.Body.Close()
+
+	resp = request("/api/status")
+	if resp.StatusCode != http.StatusUnauthorized || resp.Header.Get("WWW-Authenticate") == "" {
+		resp.Body.Close()
+		t.Fatalf("GET API status = %d Basic %q, want 401 with challenge", resp.StatusCode, resp.Header.Get("WWW-Authenticate"))
+	}
+	resp.Body.Close()
+}
+
 func TestStatsIncludesStarredCounts(t *testing.T) {
 	srv, ts := newTestServer(t)
 	feed := seedFeed(t, srv.db, "https://example.com/feed.xml", "")

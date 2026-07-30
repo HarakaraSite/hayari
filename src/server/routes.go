@@ -29,13 +29,20 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	}
 	mux.HandleFunc("/favicon.svg", serveFavicon)
 	mux.HandleFunc("/hayari-mark.svg", serveFavicon)
+	// The login page is public and depends on Pico for its layout. Keep this
+	// one stylesheet public too, otherwise an unauthenticated browser receives
+	// an auth challenge while rendering the login page.
+	mux.HandleFunc("/stylesheets/pico.min.css", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		http.ServeFileFS(w, r, assets.FS, "stylesheets/pico.min.css")
+	})
 
 	auth := s.authMiddleware
 
 	// Static assets (including index.html) are auth-protected so the app
 	// shell is not exposed without credentials. They are embedded in the
 	// executable, so retaining an old copy after a local restart would run a
-	// mismatched application. /login stays public.
+	// mismatched application. /login and its stylesheet stay public.
 	mux.HandleFunc("/", auth(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if r.URL.Path == "/" {
