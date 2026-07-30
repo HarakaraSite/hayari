@@ -22,5 +22,6 @@ func OpenBrowser(url string) {
 		args = []string{url}
 	}
 
+	// #nosec G204 -- cmd is selected from a fixed GOOS-specific allowlist.
 	exec.Command(cmd, args...).Start()
 }

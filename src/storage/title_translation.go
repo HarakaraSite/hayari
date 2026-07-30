@@ -59,6 +59,7 @@ func (s *Storage) ClaimTitleTranslations(feedID int64, limit int) (string, []Ite
 		ids[i] = "?"
 		args = append(args, item.ID)
 	}
+	// #nosec G202 -- ids contains only generated "?" placeholders; item IDs are bound in args.
 	if _, err := tx.Exec(`UPDATE items SET title_translation_state = ?, title_translation_claim = ? WHERE id IN (`+strings.Join(ids, ",")+`)`, args...); err != nil {
 		return "", nil, err
 	}

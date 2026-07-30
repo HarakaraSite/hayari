@@ -133,6 +133,7 @@ func (s *Storage) CountItems(filter ItemFilter) (int64, error) {
 	where, args := filter.where()
 	where, args, ftsJoin := applySearchFilter(where, args, filter.Search)
 
+	// #nosec G201 -- ftsJoin and where contain only fixed SQL fragments; values are bound in args.
 	query := fmt.Sprintf(`
 		SELECT COUNT(*)
 		FROM items i
@@ -262,6 +263,7 @@ func (s *Storage) MarkAllRead(filter ItemFilter) error {
 	} else {
 		where += " AND i.status = 'unread'"
 	}
+	// #nosec G201 -- where is assembled from fixed ItemFilter clauses; values are bound in args.
 	query := fmt.Sprintf(`
 		UPDATE items SET status = 'read'
 		WHERE id IN (

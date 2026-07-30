@@ -224,9 +224,12 @@ func (s *Server) greaderSubscriptionEdit(w http.ResponseWriter, r *http.Request)
 			var folderID *int64
 			if addLabel != "" {
 				label := strings.TrimPrefix(addLabel, "user/-/label/")
-				if folder, err := s.db.GetOrCreateFolder(label); err == nil {
-					folderID = &folder.ID
+				folder, err := s.db.GetOrCreateFolder(label)
+				if err != nil {
+					httpError(w, err, 500)
+					return
 				}
+				folderID = &folder.ID
 			}
 			feed, err := s.db.CreateFeed(feedURL, folderID)
 			if err != nil {
@@ -234,7 +237,10 @@ func (s *Server) greaderSubscriptionEdit(w http.ResponseWriter, r *http.Request)
 				return
 			}
 			if title != "" {
-				s.db.UpdateFeed(feed.ID, &title, folderID)
+				if err := s.db.UpdateFeed(feed.ID, &title, folderID); err != nil {
+					httpError(w, err, 500)
+					return
+				}
 			}
 			go s.worker.RefreshFeed(feed.ID)
 
@@ -260,17 +266,29 @@ func (s *Server) greaderSubscriptionEdit(w http.ResponseWriter, r *http.Request)
 				titlePtr = &title
 			}
 			if titlePtr != nil {
-				s.db.UpdateFeed(feed.ID, titlePtr, nil)
+				if err := s.db.UpdateFeed(feed.ID, titlePtr, nil); err != nil {
+					httpError(w, err, 500)
+					return
+				}
 			}
 			if addLabel != "" {
 				label := strings.TrimPrefix(addLabel, "user/-/label/")
-				if folder, err := s.db.GetOrCreateFolder(label); err == nil {
-					s.db.UpdateFeedFolder(feed.ID, &folder.ID)
+				folder, err := s.db.GetOrCreateFolder(label)
+				if err != nil {
+					httpError(w, err, 500)
+					return
+				}
+				if err := s.db.UpdateFeedFolder(feed.ID, &folder.ID); err != nil {
+					httpError(w, err, 500)
+					return
 				}
 			} else if removeLabel != "" {
 				// Move out of folder (UpdateFeed cannot express this; its
 				// nil folder_id means "keep current")
-				s.db.UpdateFeedFolder(feed.ID, nil)
+				if err := s.db.UpdateFeedFolder(feed.ID, nil); err != nil {
+					httpError(w, err, 500)
+					return
+				}
 			}
 		}
 	}
@@ -659,19 +677,34 @@ func (s *Server) greaderEditTag(w http.ResponseWriter, r *http.Request) {
 		for _, tag := range r.Form["a"] {
 			switch tag {
 			case "user/-/state/com.google/read":
-				s.db.UpdateItemStatus(id, "read")
+				if err := s.db.UpdateItemStatus(id, "read"); err != nil {
+					httpError(w, err, 500)
+					return
+				}
 			case "user/-/state/com.google/starred":
-				s.db.SetStarred(id, true)
+				if err := s.db.SetStarred(id, true); err != nil {
+					httpError(w, err, 500)
+					return
+				}
 			case "user/-/state/com.google/kept-unread":
-				s.db.UpdateItemStatus(id, "unread")
+				if err := s.db.UpdateItemStatus(id, "unread"); err != nil {
+					httpError(w, err, 500)
+					return
+				}
 			}
 		}
 		for _, tag := range r.Form["r"] {
 			switch tag {
 			case "user/-/state/com.google/read":
-				s.db.UpdateItemStatus(id, "unread")
+				if err := s.db.UpdateItemStatus(id, "unread"); err != nil {
+					httpError(w, err, 500)
+					return
+				}
 			case "user/-/state/com.google/starred":
-				s.db.SetStarred(id, false)
+				if err := s.db.SetStarred(id, false); err != nil {
+					httpError(w, err, 500)
+					return
+				}
 			}
 		}
 	}
@@ -699,7 +732,10 @@ func (s *Server) greaderMarkAllAsRead(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	s.db.MarkAllRead(filter)
+	if err := s.db.MarkAllRead(filter); err != nil {
+		httpError(w, err, 500)
+		return
+	}
 
 	w.Header().Set("Content-Type", "text/plain")
 	fmt.Fprint(w, "OK")

@@ -119,7 +119,9 @@ func (s *Storage) migrate() error {
 	needsTitleFilterReapply := false
 	for i, sql := range migrations {
 		var count int
-		s.db.QueryRow("SELECT COUNT(*) FROM schema_migrations WHERE version = ?", i).Scan(&count)
+		if err := s.db.QueryRow("SELECT COUNT(*) FROM schema_migrations WHERE version = ?", i).Scan(&count); err != nil {
+			return err
+		}
 		if count > 0 {
 			continue
 		}

@@ -162,6 +162,7 @@ func (m *Manager) translate(title string) (string, string, error) {
 		return "", "", err
 	}
 	defer os.Remove(schemaPath)
+	// #nosec G204 -- Path, API, and Model are local administrator configuration; no shell is used.
 	cmd := exec.CommandContext(ctx, m.config.Path, "-q", "-a", m.config.API, "-m", m.config.Model, "--no-cache", "--max-tokens", "512", "--json-schema", schemaPath, "--json-schema-retries", "0", prompt)
 	cmd.Stdin = strings.NewReader(title)
 	var out cappedBuffer

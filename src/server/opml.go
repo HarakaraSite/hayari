@@ -80,7 +80,9 @@ func (s *Server) importOutlines(outlines []opmlOutline, folderID *int64) (int, e
 				if name == "" {
 					name = o.Text
 				}
-				s.db.UpdateFeed(feed.ID, &name, folderID)
+				if err := s.db.UpdateFeed(feed.ID, &name, folderID); err != nil {
+					return count, err
+				}
 			}
 			go s.worker.RefreshFeed(feed.ID)
 			count++

@@ -1,7 +1,7 @@
 package server
 
 import (
-	"crypto/md5"
+	"crypto/md5" // #nosec G501 -- MD5 is only used for a non-security ETag below.
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -376,6 +376,7 @@ func (s *Server) handleFeedIcon(w http.ResponseWriter, r *http.Request, feedID i
 		return
 	}
 
+	// #nosec G401 -- This ETag is a cache validator, not a security primitive.
 	sum := md5.Sum(data)
 	etag := fmt.Sprintf(`"%x"`, sum)
 	w.Header().Set("ETag", etag)
@@ -386,6 +387,7 @@ func (s *Server) handleFeedIcon(w http.ResponseWriter, r *http.Request, feedID i
 
 	w.Header().Set("Content-Type", mimeType)
 	w.Header().Set("Cache-Control", "public, max-age=86400")
+	// #nosec G705 -- fetchAsDataURL stores only MIME allowlisted raster/ICO data.
 	w.Write(data)
 }
 
@@ -660,6 +662,7 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unsafe URL", http.StatusBadRequest)
 		return
 	}
+	// #nosec G704 -- safehttp validates redirects and each resolved dial address.
 	resp, err := pageClient.Get(pageURL)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)

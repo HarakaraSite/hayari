@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -29,6 +30,23 @@ func TestStorageUsesSingleConnection(t *testing.T) {
 	s := newTestDB(t)
 	if got := s.db.Stats().MaxOpenConnections; got != 1 {
 		t.Fatalf("MaxOpenConnections = %d, want 1", got)
+	}
+}
+
+func TestOpenCreatesPrivateParentDirectory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "private", "hayari.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+
+	info, err := os.Stat(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0700 {
+		t.Errorf("parent directory permissions = %o, want 0700", got)
 	}
 }
 

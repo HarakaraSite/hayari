@@ -13,7 +13,10 @@ type Storage struct {
 }
 
 func Open(path string) (*Storage, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	// The database contains feed URLs and article content.  When this is the
+	// default, newly-created per-user directory, do not expose it to other
+	// local users.  Existing parent directories are intentionally left alone.
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return nil, err
 	}
 
