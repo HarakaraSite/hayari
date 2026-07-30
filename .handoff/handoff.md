@@ -20,12 +20,20 @@
 - POL-20260730-title-translation-confirm: AI ボタンによる未読タイトル翻訳は、最大50件の外部 Henji 呼び出しを開始する前に確認ダイアログを表示する。
 
 ### 未決事項
-- ISS-20260730-title-translation: Henji を用いる英語記事タイトル→日本語表示を実装する。Web UI 専用で、原文 `title` と翻訳済み値を別途保存し、Web検索は両方を対象にする一方、FreshRSS / GReader API は原文を維持する。選択中フィードの一覧ヘッダーにある AI ボタンが、未読・非表示でない未翻訳記事を最大50件、全体最大2並列でバックグラウンド処理する。開始時に記事を原子的に `processing` / claim へ確保して重複送信を防ぎ、Henji 起動直前に未読・表示対象を再確認する。再起動時の未完了記事は `pending` へ戻すが自動再実行しない。Henji は Shirushi と同様の `--henji-path`／`--henji-api`／`--henji-model` により外部コマンドとして起動し、APIキーは管理しない。状態は pending / processing / translated / skipped / failed。日本語・中国語等の明確な非英語はローカル判定して skipped、曖昧なラテン文字言語は Henji の構造化出力で英語以外を skipped とする。失敗時は原文表示・無通知・自動再試行なし。
+- なし
 
 ### ユーザー判断待ち
 - なし
 
 ## Checkpoints
+
+## 2026-07-30 13:24 JST
+
+- 実行エージェント: Codex
+- 作業トピック: タイトル翻訳の実装
+- 実施: `feature/title-translations` に要件・計画を保存し、手動AIボタン、SQLite状態/claim、Henjiジョブ管理、検索、API、起動オプションを実装した。`go test ./...` 成功。
+- 次: 実 Henji の導入先・バージョン・チェックサムを確認後、任意の実サービス統合テストを追加する。
+- 注意: 通常テストは Henji を必要としない。Web UI は Henji 実行ファイルを検出できる場合だけAIボタンを表示する。
 
 ## 2026-07-30 13:03 JST
 

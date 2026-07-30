@@ -21,6 +21,7 @@ const App = (() => {
     readabilityMode: false,
     unreadListNeedsRefresh: false,
     addFeedMode: 'find',   // 'find' | 'subscribe'
+    titleTranslationAvailable: false,
   };
 
   const PAGE_SIZE = 40;
@@ -31,7 +32,7 @@ const App = (() => {
 
   let appEl,
       feedList, itemList, itemListTitle, itemListEmpty,
-      btnRefresh, btnMarkAllRead, btnManageSource, btnAddFeed, btnAddFolder, btnSettings,
+      btnRefresh, btnMarkAllRead, btnManageSource, btnTranslateTitles, btnAddFeed, btnAddFolder, btnSettings,
       searchInput,
       modalAddFeed, formAddFeed, inputFeedUrl, feedCandidates, btnFeedSubmit,
       modalManage, modalManageTitle, modalManageBody,
@@ -61,6 +62,7 @@ const App = (() => {
     btnRefresh       = $('#btn-refresh');
     btnMarkAllRead   = $('#btn-mark-all-read');
     btnManageSource  = $('#btn-manage-source');
+    btnTranslateTitles = $('#btn-translate-titles');
     btnAddFeed       = $('#btn-add-feed');
     btnAddFolder     = $('#btn-add-folder');
     btnSettings      = $('#btn-settings');
@@ -93,7 +95,10 @@ const App = (() => {
     sidebarResizer   = $('#sidebar-resizer');
     itemListResizer  = $('#item-list-resizer');
 
+    const capability = await API.getCapabilities();
+    state.titleTranslationAvailable = !!(capability && capability.title_translation);
     await Promise.all([loadSidebar(), loadSettings()]);
+    updateTitleTranslationButton();
     setupEventListeners();
     setupColumnResizers();
     setupInfiniteScroll();
@@ -346,6 +351,7 @@ const App = (() => {
     state.sourceId   = id;
     itemListTitle.textContent = name || 'All items';
     btnManageSource.hidden = (type === 'all');
+    updateTitleTranslationButton();
     updateActiveSidebarItem();
     appEl.classList.remove('show-sidebar'); // mobile: back to the list pane
     return loadItems(true);
@@ -365,6 +371,7 @@ const App = (() => {
       itemListTitle.textContent = labels[filter] || 'Items';
     }
     btnManageSource.hidden = (state.sourceType === 'all');
+    updateTitleTranslationButton();
     // Show mark-all-read only in unread view
     btnMarkAllRead.hidden = (filter !== 'unread');
     appEl.classList.remove('show-sidebar'); // mobile: back to the list pane
@@ -1030,6 +1037,7 @@ const App = (() => {
 
     // Mark all read
     btnMarkAllRead.addEventListener('click', markAllRead);
+    btnTranslateTitles.addEventListener('click', startTitleTranslations);
     btnManageSource.addEventListener('click', () => {
       if (state.sourceType === 'feed') openEditFeed(state.sourceId);
       if (state.sourceType === 'folder') openEditFolder(state.sourceId);
@@ -1207,7 +1215,25 @@ const App = (() => {
 
   // ── Helpers ────────────────────────────────────────────────────
   function itemTitle(item) {
-    return item.title || '(no title)';
+    return item.title_translation_state === 'translated' && item.translated_title ? item.translated_title : (item.title || '(no title)');
+  }
+
+  function updateTitleTranslationButton() {
+    if (!btnTranslateTitles) return;
+    btnTranslateTitles.hidden = !state.titleTranslationAvailable || state.sourceType !== 'feed';
+  }
+
+  async function startTitleTranslations() {
+    if (state.sourceType !== 'feed') return;
+    if (!confirm('Translate up to 50 unread article titles with AI?')) return;
+    btnTranslateTitles.disabled = true;
+    try {
+      await API.startTitleTranslations(state.sourceId);
+    } catch (err) {
+      console.error('start title translations:', err);
+    } finally {
+      btnTranslateTitles.disabled = false;
+    }
   }
 
   function escHTML(str) {

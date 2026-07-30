@@ -8,18 +8,20 @@ import (
 )
 
 type Item struct {
-	ID      int64     `json:"id"`
-	FeedID  int64     `json:"feed_id"`
-	GUID    string    `json:"guid"`
-	Title   string    `json:"title"`
-	Link    string    `json:"link"`
-	Date    time.Time `json:"date"`
-	Content string    `json:"content"`
-	Author  string    `json:"author"`
-	Status  string    `json:"status"`
-	Starred bool      `json:"starred"`
-	Image   *string   `json:"image"`
-	Hidden  bool      `json:"-"`
+	ID                    int64     `json:"id"`
+	FeedID                int64     `json:"feed_id"`
+	GUID                  string    `json:"guid"`
+	Title                 string    `json:"title"`
+	TranslatedTitle       *string   `json:"translated_title,omitempty"`
+	TitleTranslationState string    `json:"title_translation_state"`
+	Link                  string    `json:"link"`
+	Date                  time.Time `json:"date"`
+	Content               string    `json:"content"`
+	Author                string    `json:"author"`
+	Status                string    `json:"status"`
+	Starred               bool      `json:"starred"`
+	Image                 *string   `json:"image"`
+	Hidden                bool      `json:"-"`
 }
 
 type ItemFilter struct {
@@ -89,7 +91,7 @@ func (f ItemFilter) where() (string, []interface{}) {
 }
 
 const itemSelect = `
-	SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.date, i.content, i.author, i.status, i.starred, i.image, i.hidden
+	SELECT i.id, i.feed_id, i.guid, i.title, i.translated_title, i.title_translation_state, i.link, i.date, i.content, i.author, i.status, i.starred, i.image, i.hidden
 	FROM items i
 	JOIN feeds f ON f.id = i.feed_id`
 
@@ -118,7 +120,7 @@ func (s *Storage) ListItems(filter ItemFilter, limit, offset int) ([]Item, error
 	var items []Item
 	for rows.Next() {
 		var item Item
-		if err := rows.Scan(&item.ID, &item.FeedID, &item.GUID, &item.Title, &item.Link,
+		if err := rows.Scan(&item.ID, &item.FeedID, &item.GUID, &item.Title, &item.TranslatedTitle, &item.TitleTranslationState, &item.Link,
 			&item.Date, &item.Content, &item.Author, &item.Status, &item.Starred, &item.Image, &item.Hidden); err != nil {
 			return nil, err
 		}
@@ -146,9 +148,9 @@ func (s *Storage) CountItems(filter ItemFilter) (int64, error) {
 func (s *Storage) GetItem(id int64) (*Item, error) {
 	item := &Item{}
 	err := s.db.QueryRow(`
-		SELECT id, feed_id, guid, title, link, date, content, author, status, starred, image, hidden
+		SELECT id, feed_id, guid, title, translated_title, title_translation_state, link, date, content, author, status, starred, image, hidden
 		FROM items WHERE id = ? AND hidden = 0`, id).
-		Scan(&item.ID, &item.FeedID, &item.GUID, &item.Title, &item.Link,
+		Scan(&item.ID, &item.FeedID, &item.GUID, &item.Title, &item.TranslatedTitle, &item.TitleTranslationState, &item.Link,
 			&item.Date, &item.Content, &item.Author, &item.Status, &item.Starred, &item.Image, &item.Hidden)
 	if err != nil {
 		return nil, err
@@ -172,7 +174,7 @@ func (s *Storage) CreateItems(items []Item) error {
 	}
 	defer insertItem.Close()
 
-	insertSearch, err := tx.Prepare(`INSERT INTO search(rowid, title) VALUES (?, ?)`)
+	insertSearch, err := tx.Prepare(`INSERT INTO search(rowid, title, translated_title) VALUES (?, ?, '')`)
 	if err != nil {
 		return err
 	}
@@ -221,8 +223,8 @@ func applySearchFilter(where string, args []interface{}, search string) (string,
 	clause := ""
 	ftsJoin := ""
 	if utf8.RuneCountInString(search) < 3 {
-		clause = "instr(i.title, ?) > 0"
-		args = append(args, search)
+		clause = "(instr(i.title, ?) > 0 OR instr(COALESCE(i.translated_title, ''), ?) > 0)"
+		args = append(args, search, search)
 	} else {
 		ftsJoin = "JOIN search ON search.rowid = i.id"
 		clause = "search MATCH ?"

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"forge.harakara.site/littleisland/hayari/src/storage"
+	"forge.harakara.site/littleisland/hayari/src/titletranslation"
 	"forge.harakara.site/littleisland/hayari/src/worker"
 )
 
@@ -29,16 +30,21 @@ type Server struct {
 	AllowInsecureNoAuth  bool
 	SecureCookie         bool
 
-	authKey []byte
-	db      *storage.Storage
-	worker  *worker.Worker
-	http    *http.Server
-	logins  *loginRateLimiter
-	tokenMu sync.RWMutex
-	tokens  map[string]time.Time
+	authKey      []byte
+	db           *storage.Storage
+	worker       *worker.Worker
+	translations *titletranslation.Manager
+	http         *http.Server
+	logins       *loginRateLimiter
+	tokenMu      sync.RWMutex
+	tokens       map[string]time.Time
 }
 
 func New(db *storage.Storage, addr, username, password, version string) *Server {
+	return NewWithTitleTranslation(db, addr, username, password, version, titletranslation.DefaultConfig())
+}
+
+func NewWithTitleTranslation(db *storage.Storage, addr, username, password, version string, config titletranslation.Config) *Server {
 	s := &Server{
 		Addr:     addr,
 		Username: username,
@@ -49,6 +55,7 @@ func New(db *storage.Storage, addr, username, password, version string) *Server 
 		tokens:   make(map[string]time.Time),
 	}
 	s.worker = worker.New(db)
+	s.translations = titletranslation.New(db, config)
 	return s
 }
 
@@ -62,6 +69,9 @@ func (s *Server) Start() error {
 	}
 	s.authKey = key
 
+	if err := s.db.ReleaseProcessingTitleTranslations(); err != nil {
+		return fmt.Errorf("release interrupted title translations: %w", err)
+	}
 	s.worker.Start()
 
 	mux := http.NewServeMux()
@@ -96,6 +106,9 @@ func (s *Server) newHTTPServer(handler http.Handler) *http.Server {
 }
 
 func (s *Server) Stop() {
+	if s.translations != nil {
+		s.translations.Stop()
+	}
 	s.worker.Stop()
 	if s.http != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)

@@ -47,6 +47,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/healthz", s.handleHealthz)
 
 	mux.HandleFunc("/api/status", auth(s.handleStatus))
+	mux.HandleFunc("/api/capabilities", auth(s.handleCapabilities))
 
 	// Folders
 	mux.HandleFunc("/api/folders", auth(s.handleFolders))
@@ -89,6 +90,14 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"running": s.worker.Running(),
 		"version": s.Version,
 	})
+}
+
+func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, map[string]bool{"title_translation": s.translations != nil && s.translations.Available()})
 }
 
 // handleHealthz reports whether the process can reach its SQLite database.
@@ -216,6 +225,15 @@ func (s *Server) handleFeeds(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleFeed(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
+	if strings.HasSuffix(path, "/title-translations") {
+		id, err := pathID(strings.TrimSuffix(path, "/title-translations"), "/api/feeds/")
+		if err != nil {
+			http.Error(w, "invalid id", 400)
+			return
+		}
+		s.handleFeedTitleTranslations(w, r, id)
+		return
+	}
 
 	// Dispatch icon sub-resource: /api/feeds/:id/icon
 	if strings.HasSuffix(path, "/icon") {
@@ -279,6 +297,29 @@ func (s *Server) handleFeed(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *Server) handleFeedTitleTranslations(w http.ResponseWriter, r *http.Request, feedID int64) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if _, err := s.db.GetFeed(feedID); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	accepted, err := s.translations.Start(feedID)
+	if err != nil {
+		httpError(w, err, 500)
+		return
+	}
+	if accepted == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]int{"accepted": accepted})
 }
 
 // handleFeedErrors returns a map of feed_id → error string for feeds with errors.

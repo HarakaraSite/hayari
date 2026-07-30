@@ -306,6 +306,16 @@ body.is-resizing-columns {
   color: #344054;
 }
 
+#btn-translate-titles {
+  margin: 0;
+  flex-shrink: 0;
+  color: #344054;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+html[data-theme="dark"] #btn-translate-titles { color: #e6edf7; }
+
 html[data-theme="dark"] #btn-manage-source { color: #e6edf7; }
 
 /* Search bar */

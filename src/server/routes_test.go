@@ -57,6 +57,32 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
+func TestTitleTranslationCapabilityAndUnavailableStart(t *testing.T) {
+	srv, ts := newTestServer(t)
+	resp := doRequest(t, ts, http.MethodGet, "/api/capabilities", "")
+	defer resp.Body.Close()
+	var capability struct {
+		TitleTranslation bool `json:"title_translation"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&capability); err != nil {
+		t.Fatal(err)
+	}
+	if capability.TitleTranslation {
+		t.Fatal("test server must not advertise missing henji")
+	}
+	feed := seedFeed(t, srv.db, "https://example.com/unavailable.xml", "")
+	resp = doRequest(t, ts, http.MethodPost, fmt.Sprintf("/api/feeds/%d/title-translations", feed.ID), "")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("start unavailable = %d, want 204", resp.StatusCode)
+	}
+	resp = doRequest(t, ts, http.MethodPost, "/api/feeds/999999/title-translations", "")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing feed = %d, want 404", resp.StatusCode)
+	}
+}
+
 func TestStaticAssetsAreNotCached(t *testing.T) {
 	_, ts := newTestServer(t)
 	for _, path := range []string{"/", "/favicon.svg", "/hayari-mark.svg", "/stylesheets/pico.min.css", "/stylesheets/app.css", "/javascripts/api.js", "/javascripts/key.js", "/javascripts/app.js"} {

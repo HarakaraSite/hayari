@@ -79,6 +79,20 @@ var migrations = []string{
 	`ALTER TABLE feeds ADD COLUMN title_filter_keywords TEXT NOT NULL DEFAULT ''`,
 	// 21: フィードのタイトル非表示設定に一致した記事
 	`ALTER TABLE items ADD COLUMN hidden BOOLEAN NOT NULL DEFAULT 0`,
+	// 22: Web UI 用の記事タイトル翻訳
+	`ALTER TABLE items ADD COLUMN translated_title TEXT`,
+	// 23: タイトル翻訳の処理状態と所有中の claim
+	`ALTER TABLE items ADD COLUMN title_translation_state TEXT NOT NULL DEFAULT 'pending'`,
+	// 24: 翻訳タイトルも検索できるよう trigram FTS を作り直す
+	`DROP TABLE IF EXISTS search`,
+	// 25
+	`CREATE VIRTUAL TABLE search USING fts5(title, translated_title, tokenize='trigram')`,
+	// 26
+	`INSERT INTO search(rowid, title, translated_title) SELECT id, title, translated_title FROM items`,
+	// 27
+	`ALTER TABLE items ADD COLUMN title_translation_claim TEXT`,
+	// 28
+	`CREATE INDEX IF NOT EXISTS idx_items_title_translation_claim ON items(title_translation_claim)`,
 }
 
 func (s *Storage) migrate() error {

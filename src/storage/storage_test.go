@@ -32,6 +32,38 @@ func TestStorageUsesSingleConnection(t *testing.T) {
 	}
 }
 
+func TestTitleTranslationClaimAndSearch(t *testing.T) {
+	s := newTestDB(t)
+	feed, err := s.CreateFeed("https://example.com/translation.xml", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateItems([]Item{
+		{FeedID: feed.ID, GUID: "new", Title: "New title", Date: time.Now()},
+		{FeedID: feed.ID, GUID: "old", Title: "Old title", Date: time.Now().Add(-time.Hour)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	claim, items, err := s.ClaimTitleTranslations(feed.ID, 50)
+	if err != nil || len(items) != 2 || claim == "" {
+		t.Fatalf("claim = %q, %d items, %v", claim, len(items), err)
+	}
+	if _, duplicate, err := s.ClaimTitleTranslations(feed.ID, 50); err != nil || len(duplicate) != 0 {
+		t.Fatalf("duplicate claim = %d items, %v", len(duplicate), err)
+	}
+	translated := "新しい題名"
+	if err := s.SetTitleTranslationResult(items[0].ID, claim, TitleTranslationTranslated, &translated); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetTitleTranslationResult(items[1].ID, claim, TitleTranslationSkipped, nil); err != nil {
+		t.Fatal(err)
+	}
+	results, err := s.ListItems(ItemFilter{Search: "新しい"}, 10, 0)
+	if err != nil || len(results) != 1 || results[0].TranslatedTitle == nil || *results[0].TranslatedTitle != translated {
+		t.Fatalf("translated title search = %#v, %v", results, err)
+	}
+}
+
 func TestTitleSearchMigrationRebuildsExistingIndex(t *testing.T) {
 	f, err := os.CreateTemp("", "hayari-search-migration-*.db")
 	if err != nil {

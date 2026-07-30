@@ -10,6 +10,7 @@ import (
 	"forge.harakara.site/littleisland/hayari/src/platform"
 	"forge.harakara.site/littleisland/hayari/src/server"
 	"forge.harakara.site/littleisland/hayari/src/storage"
+	"forge.harakara.site/littleisland/hayari/src/titletranslation"
 	"forge.harakara.site/littleisland/hayari/src/worker"
 )
 
@@ -26,8 +27,23 @@ func main() {
 		secureCookie         = flag.Bool("secure-cookie", false, "mark session cookies Secure (required behind HTTPS proxy)")
 		version              = flag.Bool("version", false, "print version and exit")
 		open                 = flag.Bool("open", false, "open browser on start")
+		henjiPath            = flag.String("henji-path", "henji", "path to Henji executable")
+		henjiAPI             = flag.String("henji-api", "openrouter", "Henji API provider")
+		henjiModel           = flag.String("henji-model", "google/gemini-2.5-flash-lite", "Henji model")
 	)
 	flag.Parse()
+	providedHenjiAPI, providedHenjiModel := false, false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "henji-api" {
+			providedHenjiAPI = true
+		}
+		if f.Name == "henji-model" {
+			providedHenjiModel = true
+		}
+	})
+	if providedHenjiAPI != providedHenjiModel {
+		log.Fatal("--henji-api and --henji-model must be specified together")
+	}
 
 	if *version {
 		fmt.Println(Version)
@@ -41,7 +57,7 @@ func main() {
 	}
 	defer db.Close()
 
-	s := server.New(db, *addr, *username, *password, Version)
+	s := server.NewWithTitleTranslation(db, *addr, *username, *password, Version, titletranslation.Config{Path: *henjiPath, API: *henjiAPI, Model: *henjiModel})
 	s.AllowGReaderLoginGET = *allowGReaderLoginGET
 	s.AllowInsecureNoAuth = *allowInsecureNoAuth
 	s.SecureCookie = *secureCookie
