@@ -13,6 +13,7 @@
 - POL-20260728-fever-api: Fever API は対応しない。FreshRSS / Google Reader API の現行互換を維持する。
 - POL-20260728-readability-quality: Readability 抽出品質の追加改善は現時点で行わない。具体的な抽出不良が報告・再現された場合にのみ再検討する。
 - POL-20260728-refresh-interval: フィード別更新間隔は追加しない。全フィード共通の `refresh_rate` を維持する。
+- POL-20260801-item-ingestion: 新規記事は全フィード共通の `item_max_age_days` に従って保存前に公開日時を判定する。既定は30日、0は無制限とし、既存の記事は自動削除しない。GUIDなしの記事は安定したリンクを優先して重複排除する。
 - POL-20260728-settings-transfer: 設定の import / export は追加しない。フィード・フォルダ移行は既存の OPML import / export を維持する。
 - POL-20260728-theme-scope: 追加テーマは将来機能として保留する。現行の auto / light / dark を維持する。
 - POL-20260728-j-navigation: `j` / `k` による記事移動は現状維持とする。選択、スクロール、未読記事の既読化の挙動は変更しない。
@@ -1177,3 +1178,11 @@
 - 実施: `/favicon.ico` を未認証でSVG faviconとして配信するよう修正し、`v1.2.2` を 3874760 にタグ・公開した。FJA `ci status --tag v1.2.2` でForgejo Actions run 16の完全一致・成功を確認し、6アセットとSHA256SUMS、linux/arm64版の埋め込み版番号を検証した。
 - 次: なし
 - 注意: FJAはCI監視に使用する。任意Release assetの取得は未対応のため、公開物再検証ではcurlを用いた。
+
+## 2026-08-01 17:32 JST
+
+- 実行エージェント: Codex
+- 作業トピック: 古い記事の受信制限とRSS重複防止
+- 実施: Settingsに全フィード共通の最大記事年齢（無制限/7/30/90日、既定30日）を追加し、保存前に古い記事を除外。GUIDなしの記事はリンク由来の識別子を用い、同一リンクの既存記事も重複保存しないようにした。
+- 次: なし
+- 注意: 既存の記事は変更しない。既存の重複行を消す場合は別途クリーンアップが必要。

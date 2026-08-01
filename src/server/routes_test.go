@@ -651,7 +651,7 @@ func TestSettingsPutRejectsAuthSecret(t *testing.T) {
 func TestSettingsPutAllowsWhitelistedKeys(t *testing.T) {
 	srv, ts := newTestServer(t)
 
-	resp := doRequest(t, ts, http.MethodPut, "/api/settings", `{"theme":"beige","font_size":"large","refresh_rate":"30"}`)
+	resp := doRequest(t, ts, http.MethodPut, "/api/settings", `{"theme":"beige","font_size":"large","refresh_rate":"30","item_max_age_days":"30"}`)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", resp.StatusCode)
@@ -668,6 +668,9 @@ func TestSettingsPutAllowsWhitelistedKeys(t *testing.T) {
 	}
 	if settings["theme"] != "beige" {
 		t.Fatalf("returned theme = %q, want beige", settings["theme"])
+	}
+	if settings["item_max_age_days"] != "30" {
+		t.Fatalf("returned item_max_age_days = %q, want 30", settings["item_max_age_days"])
 	}
 }
 

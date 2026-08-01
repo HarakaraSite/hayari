@@ -14,9 +14,10 @@ import (
 )
 
 const (
-	defaultInterval = 30 * time.Minute
-	cleanupInterval = 24 * time.Hour
-	concurrentFeeds = 5
+	defaultInterval       = 30 * time.Minute
+	defaultItemMaxAgeDays = 30
+	cleanupInterval       = 24 * time.Hour
+	concurrentFeeds       = 5
 )
 
 type Worker struct {
@@ -56,6 +57,20 @@ func (w *Worker) refreshInterval() time.Duration {
 		return 0 // disabled
 	}
 	return time.Duration(mins) * time.Minute
+}
+
+// itemMaxAgeDays reads item_max_age_days from settings. Zero disables the
+// age limit; missing or invalid values retain the safe 30-day default.
+func (w *Worker) itemMaxAgeDays() int {
+	val, err := w.db.GetSetting("item_max_age_days")
+	if err != nil || val == "" {
+		return defaultItemMaxAgeDays
+	}
+	days, err := strconv.Atoi(val)
+	if err != nil || days < 0 {
+		return defaultItemMaxAgeDays
+	}
+	return days
 }
 
 func (w *Worker) loop() {
@@ -168,8 +183,13 @@ func (w *Worker) refreshFeed(feed storage.Feed) {
 
 	// Apply filters and collect items
 	filters, _ := w.db.ListFiltersForFeed(feed.ID)
+	maxAgeDays := w.itemMaxAgeDays()
+	oldestAllowed := time.Now().AddDate(0, 0, -maxAgeDays)
 	var items []storage.Item
 	for _, pi := range parsed.Items {
+		if maxAgeDays > 0 && pi.Date.Before(oldestAllowed) {
+			continue
+		}
 		item := storage.Item{
 			FeedID:  feed.ID,
 			GUID:    pi.GUID,

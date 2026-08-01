@@ -582,9 +582,10 @@ func (s *Server) handleFilter(w http.ResponseWriter, r *http.Request) {
 // clientSettings is the whitelist of keys exposed via the settings API.
 // Internal keys (auth_secret) must never be readable or writable by clients.
 var clientSettings = map[string]bool{
-	"theme":        true,
-	"font_size":    true,
-	"refresh_rate": true,
+	"theme":             true,
+	"font_size":         true,
+	"refresh_rate":      true,
+	"item_max_age_days": true,
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {

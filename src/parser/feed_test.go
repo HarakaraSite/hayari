@@ -163,9 +163,23 @@ func TestGUIDFallback(t *testing.T) {
 	if guid == "" {
 		t.Error("GUID should not be empty when guid element is missing")
 	}
-	// 同じ link+title なら同じ GUID になる
+	// 同じリンクなら同じ GUID になる。タイトルが更新されても変わらない。
 	if len(feed.Items) >= 2 && feed.Items[0].GUID != feed.Items[1].GUID {
-		t.Error("identical link+title should produce the same fallback GUID")
+		t.Error("identical links should produce the same fallback GUID")
+	}
+}
+
+func TestGUIDFallbackIgnoresTitleChanges(t *testing.T) {
+	first, err := Parse([]byte(strings.Replace(rssNoGUID, "No GUID Item", "Original title", 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := Parse([]byte(strings.Replace(rssNoGUID, "No GUID Item", "Revised title", 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Items[0].GUID != second.Items[0].GUID {
+		t.Errorf("fallback GUID changed after title revision: %q != %q", first.Items[0].GUID, second.Items[0].GUID)
 	}
 }
 

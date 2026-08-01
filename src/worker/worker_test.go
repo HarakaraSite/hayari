@@ -35,6 +35,11 @@ func newTestDB(t *testing.T) *storage.Storage {
 		t.Fatalf("Open: %v", err)
 	}
 	t.Cleanup(func() { s.Close() })
+	// Most worker tests use historical fixture dates. Disable the age limit in
+	// those fixtures; age-limit behavior has focused tests below.
+	if err := s.SetSetting("item_max_age_days", "0"); err != nil {
+		t.Fatal(err)
+	}
 	return s
 }
 
@@ -250,6 +255,68 @@ func TestRefreshFeedNoDuplicates(t *testing.T) {
 	}
 }
 
+func TestRefreshFeedSkipsItemsOlderThanMaximumAge(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SetSetting("item_max_age_days", "30"); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC()
+	body := fmt.Sprintf(`<?xml version="1.0"?>
+<rss version="2.0"><channel><title>Age test</title><link>https://example.com</link>
+<item><guid>recent</guid><title>Recent</title><link>https://example.com/recent</link><pubDate>%s</pubDate></item>
+<item><guid>old</guid><title>Old</title><link>https://example.com/old</link><pubDate>%s</pubDate></item>
+</channel></rss>`, now.Add(-time.Hour).Format(time.RFC1123Z), now.AddDate(0, 0, -31).Format(time.RFC1123Z))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/rss+xml")
+		fmt.Fprint(w, body)
+	}))
+	defer srv.Close()
+
+	feed, _ := db.CreateFeed(srv.URL+"/feed.xml", nil)
+	New(db).RefreshFeed(feed.ID)
+
+	items, err := db.ListItems(storage.ItemFilter{}, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].GUID != "recent" {
+		t.Fatalf("stored items = %#v, want only recent item", items)
+	}
+}
+
+func TestRefreshFeedDoesNotDuplicateExistingItemByLink(t *testing.T) {
+	db := newTestDB(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/rss+xml")
+		fmt.Fprint(w, `<?xml version="1.0"?>
+<rss version="2.0"><channel><title>Link test</title><link>https://example.com</link>
+<item><title>Revised title</title><link>https://example.com/article</link><pubDate>Mon, 01 Jan 2024 00:00:00 +0000</pubDate></item>
+</channel></rss>`)
+	}))
+	defer srv.Close()
+
+	feed, _ := db.CreateFeed(srv.URL+"/feed.xml", nil)
+	if err := db.CreateItems([]storage.Item{{
+		FeedID: feed.ID,
+		GUID:   "legacy-title-based-guid",
+		Title:  "Original title",
+		Link:   "https://example.com/article",
+		Date:   time.Now(),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	New(db).RefreshFeed(feed.ID)
+	count, err := db.CountItems(storage.ItemFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Errorf("item count = %d, want 1", count)
+	}
+}
+
 func TestFaviconSourceURL(t *testing.T) {
 	tests := []struct {
 		name                         string
@@ -448,6 +515,26 @@ func TestRefreshIntervalFromSettings(t *testing.T) {
 	d := w.refreshInterval()
 	if d != 15*time.Minute {
 		t.Errorf("refreshInterval = %v, want 15m", d)
+	}
+}
+
+func TestItemMaxAgeDaysDefaultsTo30(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SetSetting("item_max_age_days", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := New(db).itemMaxAgeDays(); got != 30 {
+		t.Errorf("itemMaxAgeDays = %d, want 30", got)
+	}
+}
+
+func TestItemMaxAgeDaysAllowsUnlimited(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SetSetting("item_max_age_days", "0"); err != nil {
+		t.Fatal(err)
+	}
+	if got := New(db).itemMaxAgeDays(); got != 0 {
+		t.Errorf("itemMaxAgeDays = %d, want 0", got)
 	}
 }
 

@@ -144,6 +144,15 @@
         <label>Auto-refresh interval (minutes, 0&nbsp;=&nbsp;off)
           <input type="number" name="refresh_rate" min="0" max="1440" placeholder="30" />
         </label>
+        <label>Maximum article age
+          <select name="item_max_age_days">
+            <option value="0">Unlimited</option>
+            <option value="7">7 days</option>
+            <option value="30" selected>30 days</option>
+            <option value="90">90 days</option>
+          </select>
+          <small>Articles older than this are not saved.</small>
+        </label>
         <button type="submit">Save</button>
       </form>
       <hr />

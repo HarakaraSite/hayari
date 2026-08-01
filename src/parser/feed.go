@@ -45,8 +45,15 @@ func itemGUID(gi *gofeed.Item) string {
 	if gi.GUID != "" {
 		return gi.GUID
 	}
-	// Fallback: SHA256 of link+title
-	h := sha256.Sum256([]byte(gi.Link + "\x00" + gi.Title))
+	// A stable article URL is a better fallback than link+title: publishers
+	// commonly revise titles after an item has first appeared in a feed. Keep
+	// the title when no URL is available so distinct linkless entries remain
+	// distinguishable.
+	key := gi.Link
+	if key == "" {
+		key = "\x00" + gi.Title
+	}
+	h := sha256.Sum256([]byte(key))
 	return fmt.Sprintf("%x", h[:16])
 }
 

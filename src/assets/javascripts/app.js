@@ -964,7 +964,7 @@ const App = (() => {
   async function openSettings() {
     const s = await API.getSettings();
     if (s) {
-      ['theme', 'font_size', 'refresh_rate'].forEach(key => {
+      ['theme', 'font_size', 'refresh_rate', 'item_max_age_days'].forEach(key => {
         const el = formSettings.querySelector(`[name="${key}"]`);
         if (el && s[key] != null) el.value = key === 'theme' && s[key] === 'beige' ? 'light' : s[key];
       });

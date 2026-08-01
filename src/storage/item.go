@@ -168,7 +168,11 @@ func (s *Storage) CreateItems(items []Item) error {
 
 	insertItem, err := tx.Prepare(`
 		INSERT INTO items (feed_id, guid, title, link, date, content, author, image, status, hidden)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+		WHERE NOT EXISTS (
+			SELECT 1 FROM items
+			WHERE feed_id = ? AND (guid = ? OR (? <> '' AND link = ?))
+		)
 		ON CONFLICT(feed_id, guid) DO NOTHING`)
 	if err != nil {
 		return err
@@ -196,7 +200,8 @@ func (s *Storage) CreateItems(items []Item) error {
 			status = "unread"
 		}
 		res, err := insertItem.Exec(item.FeedID, item.GUID, item.Title, item.Link,
-			item.Date.UTC().Format(time.RFC3339Nano), item.Content, item.Author, item.Image, status, item.Hidden)
+			item.Date.UTC().Format(time.RFC3339Nano), item.Content, item.Author, item.Image, status, item.Hidden,
+			item.FeedID, item.GUID, item.Link, item.Link)
 		if err != nil {
 			return err
 		}
