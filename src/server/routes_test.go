@@ -87,7 +87,7 @@ func TestTitleTranslationCapabilityAndUnavailableStart(t *testing.T) {
 
 func TestStaticAssetsAreNotCached(t *testing.T) {
 	_, ts := newTestServer(t)
-	for _, path := range []string{"/", "/favicon.svg", "/hayari-mark.svg", "/stylesheets/pico.min.css", "/stylesheets/app.css", "/javascripts/api.js", "/javascripts/key.js", "/javascripts/app.js"} {
+	for _, path := range []string{"/", "/stylesheets/pico.min.css", "/stylesheets/app.css", "/javascripts/api.js", "/javascripts/key.js", "/javascripts/app.js"} {
 		resp := doRequest(t, ts, http.MethodGet, path, "")
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
@@ -116,6 +116,11 @@ func TestFaviconIsPublic(t *testing.T) {
 		if got := resp.Header.Get("Content-Type"); !strings.HasPrefix(got, "image/svg+xml") {
 			resp.Body.Close()
 			t.Errorf("%s: Content-Type = %q, want image/svg+xml", path, got)
+			continue
+		}
+		if got := resp.Header.Get("Cache-Control"); got != "public, max-age=604800" {
+			resp.Body.Close()
+			t.Errorf("%s: Cache-Control = %q, want public, max-age=604800", path, got)
 			continue
 		}
 		resp.Body.Close()

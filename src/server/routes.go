@@ -24,7 +24,10 @@ import (
 func (s *Server) registerRoutes(mux *http.ServeMux) {
 	fs := http.FileServer(http.FS(assets.FS))
 	serveFavicon := func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
+		// Firefox persists favicons for bookmarks only when the resource is
+		// cacheable. The app shell remains no-store below, but this static icon
+		// must be retained by the browser.
+		w.Header().Set("Cache-Control", "public, max-age=604800")
 		http.ServeFileFS(w, r, assets.FS, "favicon.svg")
 	}
 	mux.HandleFunc("/favicon.svg", serveFavicon)
