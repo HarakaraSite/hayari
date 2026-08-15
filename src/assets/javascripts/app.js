@@ -388,6 +388,7 @@ const App = (() => {
       state.items  = [];
       state.offset = 0;
       itemList.innerHTML = '';
+      itemList.appendChild(loadMoreSentinel);
       itemListEmpty.hidden = true;
     }
 
@@ -450,7 +451,7 @@ const App = (() => {
         `<span class="item-title">${escHTML(itemTitle(item))}</span>`;
 
       li.addEventListener('click', () => selectItem(item));
-      itemList.appendChild(li);
+      itemList.insertBefore(li, loadMoreSentinel);
     });
   }
 
@@ -1209,7 +1210,7 @@ const App = (() => {
       if (entries[0].isIntersecting && !state.loading && state.items.length < state.total) {
         loadItems(false);
       }
-    }, { threshold: 0.1 });
+    }, { root: itemList, rootMargin: '0px 0px 200px 0px', threshold: 0.1 });
     observer.observe(loadMoreSentinel);
   }
 

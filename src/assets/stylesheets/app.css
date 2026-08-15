@@ -348,6 +348,13 @@ html[data-theme="dark"] #btn-manage-source { color: #e6edf7; }
   cursor: pointer;
 }
 
+/* This stays inside #item-list so it moves with that pane's scroll position. */
+#load-more-sentinel {
+  min-height: 1px;
+  border: 0;
+  cursor: default;
+}
+
 .item-entry {
   padding: 0.55rem 0.75rem;
   display: flex;

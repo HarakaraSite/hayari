@@ -1218,3 +1218,11 @@
 - 実施: `b3398e5` を注釈付き `v1.2.4` タグとしてpush。Forgejo Actions run 18が成功し、6バイナリと`SHA256SUMS`がReleaseへ添付された。公開物のチェックサムとlinux/arm64版の埋め込みバージョン`v1.2.4`を確認した。
 - 次: なし。
 - 注意: ユーザー判断により追加テスト（race、追加E2E、実TTY）は実行していない。通常ゲートはリリース前に成功済み。
+
+## 2026-08-15 15:18 JST
+
+- 実行エージェント: Codex
+- 作業トピック: 未読一覧の追加読込
+- 実施: 40件単位の無限スクロール監視要素を実スクロール領域 `#item-list` の内側へ移し、一覧リセット後も保持して追加記事の直前に置くよう修正した。`node --check src/assets/javascripts/app.js`、`go test ./...`、`git diff --check` が成功。
+- 次: なし。
+- 注意: `~/.local/share/pnpm/bin/playwright cli` でheadless Chromiumを起動。100件の未読記事を返すAPIモックで、初期40件から末尾スクロール2回後に100件が一覧へ表示されることを確認した。一時確認用DBは `/tmp/tmp.d8kFQWQFLt` に残っている。

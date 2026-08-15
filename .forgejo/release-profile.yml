@@ -1,4 +1,4 @@
-version: 1
+version: 2
 
 runner_label: ubuntu-latest
 actions:
@@ -32,6 +32,14 @@ quality:
   vet_command: go vet ./...
   checksums: true
 
-failure_summary:
-  mode: log-tail
-  log_tail_bytes: 4000
+diagnostics:
+  mode: native-actions-logs
+
+pre_release:
+  reference_environment: ai-dev development VM with the documented local toolchain
+  reference_checks:
+    - name: race
+      command: go test -race ./...
+    - name: browser-e2e
+      command: playwright cli with the managed headless Chromium
+  evidence_location: .handoff/handoff.md
