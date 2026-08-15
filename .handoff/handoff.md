@@ -1226,3 +1226,11 @@
 - 実施: 40件単位の無限スクロール監視要素を実スクロール領域 `#item-list` の内側へ移し、一覧リセット後も保持して追加記事の直前に置くよう修正した。`node --check src/assets/javascripts/app.js`、`go test ./...`、`git diff --check` が成功。
 - 次: なし。
 - 注意: `~/.local/share/pnpm/bin/playwright cli` でheadless Chromiumを起動。100件の未読記事を返すAPIモックで、初期40件から末尾スクロール2回後に100件が一覧へ表示されることを確認した。一時確認用DBは `/tmp/tmp.d8kFQWQFLt` に残っている。
+
+## 2026-08-15 15:35 JST
+
+- 実行エージェント: Codex
+- 作業トピック: v1.2.5 リリース
+- 実施: `1726110` を注釈付き `v1.2.5` として公開。release profileをv2へ移行し、失敗時のRelease upload経路を除去した。Forgejo Actions run 19が成功し、6バイナリと`SHA256SUMS`を公開。linux/arm64公開物のSHA-256と埋め込み版番号`v1.2.5`を確認した。
+- 次: なし。
+- 注意: ユーザー判断により今回の追加手動ゲート（race・実サービスE2E・実TTY）は実行していない。通常ゲートと100件一覧のPlaywright APIモックE2Eは成功済み。
