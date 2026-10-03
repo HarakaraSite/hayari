@@ -1251,3 +1251,21 @@
 ### 連絡・注意事項
 - 移行中に見つけた挙動差2件を Pico 互換へ合わせた。1) リンク要素が `--pico-color` をプライマリ色へ再定義するため `.icon-btn` のログアウト記号が青くなる挙動は `a` 上の `--hayari-color` 再定義で維持。2) `--pico-muted-background-color` は Pico 未定義でホバー背景が無効だったが、`--hayari-muted-background-color` を定義して薄いホバー表示が有効になった（意図的な唯一の見た目差分。`transparent` にすれば無効化できる）。
 - 変更は未コミット（`.handoff/handoff.md`、README 英日、`docs/tasks.md`、`docs/yarr-research.md`、assets、routes / routes_test 含む）。`go test ./...`・`go vet ./...`・`node --check` 成功済み。
+
+## 2026-10-03 17:30 JST
+
+- 実行エージェント: pi
+- 作業トピック: v1.2.6 リリース（Pico CSS 除去・browser-e2e 整備込み）
+
+### 実施したこと
+- `refactor: replace Pico CSS with bundled base stylesheet`（`2ba43f6`）と `test: add release browser-e2e smoke`（`ad61890`）を main へ push し、注釈付きタグ `v1.2.6` を `ad61890` に作成・push した。
+- リリース前ゲート: `go test ./...`・`go vet ./...`・JS 構文確認・`git diff --check`・browser-e2e（`./scripts/browser-e2e-smoke.sh` → `browser-e2e: PASS`、API モック方式・headless Chromium）を成功させた。スクリーンショット比較（Playwright、8画面ピクセル一致）で CSS 移行の見た目一致も確認済み。
+- Forgejo Actions run 20（`build-and-release`）がタグ `v1.2.6` とコミット `ad61890` の完全一致で成功。6 バイナリと `SHA256SUMS` が Release へ添付され、公開物の SHA-256（`hayari-linux-arm64: OK`）と埋め込みバージョン `v1.2.6`（linux/amd64 公開物の `--version`）を確認した。
+
+### 次のタスク候補
+- なし
+
+### 連絡・注意事項
+- ユーザー判断により `go test -race ./...` は今回未実行。profile の reference check からは削除せず、skip は本記録を証拠とする（v1.2.3〜1.2.5 と同じ扱い）。
+- リリースプロファイルは再作成不要と確認済み。profile からの workflow render との差分は `permissions: contents: write`、`GOMODCACHE` 差し替え＋`-trimpath`（project 固有保持）、コメント・`id: build` のみで、機能面は一致した。
+- browser-e2e は `PLAYWRIGHT_MODULE` に Playwright のモジュールパスを設定して実行する（この VM では `/home/agent/projects/shirushi/node_modules/playwright`）。
