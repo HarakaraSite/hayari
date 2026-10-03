@@ -41,5 +41,5 @@ pre_release:
     - name: race
       command: go test -race ./...
     - name: browser-e2e
-      command: playwright cli with the managed headless Chromium
+      command: ./scripts/browser-e2e-smoke.sh
   evidence_location: .handoff/handoff.md

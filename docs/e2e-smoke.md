@@ -106,7 +106,7 @@ echo 'E2E smoke: PASS'
 - 実フィードの取得・更新（ネットワークや外部サービスに依存するため）
 - HTTPS プロキシの設定検証
 - Reeder / NetNewsWire の実機互換性
-- UI のブラウザ操作・レスポンシブ表示
+- UI のブラウザ操作・レスポンシブ表示（`./scripts/browser-e2e-smoke.sh` の browser-e2e が担当）
 
 ## 任意: 実 Henji タイトル翻訳 E2E
 

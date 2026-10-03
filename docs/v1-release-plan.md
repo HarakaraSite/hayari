@@ -72,8 +72,8 @@
 
 1. Forgejo に `littleisland/hayari` を作成する。作成後、表示 URL、owner、既定ブランチ、公開可否を読み戻す。
 2. 現在の履歴を保ったまま `origin` を `https://forge.harakara.site/littleisland/hayari.git` に設定し、初回 push 前に対象 SHA を確認する。
-3. 通常 CI で build、race test、vet、JavaScript 構文確認を実行する。
-4. Forgejo Actions のタグ起点 workflow を追加する。`v*` タグで、6 ターゲットのバイナリ、OS/arch ごとのアーカイブ、`SHA256SUMS`、CHANGELOG のリリースノートを生成し、全品質ゲート成功後にだけ Release へ添付する。
+3. 通常 CI で build、`go test ./...`、`go vet ./...` を実行する。
+4. Forgejo Actions のタグ起点 workflow を追加する。`v*` タグで、6 ターゲットのバイナリ、`SHA256SUMS`、`Release <tag>` 形式のリリースノートを生成し、全品質ゲート成功後にだけ Release へ添付する。
 5. workflow の権限と Forgejo のリリース API 互換性を実環境で確認する。自動添付が未設定なら、同じ成果物とチェックサムを手動で添付できる手順を残す。
 
 ### 5. リリース候補を検証する
@@ -87,6 +87,7 @@ go vet ./...
 node --check src/assets/javascripts/api.js
 node --check src/assets/javascripts/app.js
 node --check src/assets/javascripts/key.js
+./scripts/browser-e2e-smoke.sh
 ```
 
 続けて、新しい一時 DB で以下を確認する。
