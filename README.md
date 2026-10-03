@@ -12,7 +12,7 @@ The name Hayari comes from the Japanese word 「流行り」, meaning a trend or
 - Desktop tray icon support (build with `gui` tag)
 - FreshRSS `greader.php`-compatible API subset
 - Per-feed title keyword exclusions (literal substring match)
-- Pico CSS based lightweight UI
+- Lightweight UI with self-hosted CSS (no CSS framework dependency)
 
 ## Screenshot
 

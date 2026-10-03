@@ -33,12 +33,13 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/favicon.svg", serveFavicon)
 	mux.HandleFunc("/favicon.ico", serveFavicon)
 	mux.HandleFunc("/hayari-mark.svg", serveFavicon)
-	// The login page is public and depends on Pico for its layout. Keep this
-	// one stylesheet public too, otherwise an unauthenticated browser receives
-	// an auth challenge while rendering the login page.
-	mux.HandleFunc("/stylesheets/pico.min.css", func(w http.ResponseWriter, r *http.Request) {
+	// The login page is public and depends on the bundled base stylesheet for
+	// its layout. Keep this one stylesheet public too, otherwise an
+	// unauthenticated browser receives an auth challenge while rendering the
+	// login page.
+	mux.HandleFunc("/stylesheets/base.css", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		http.ServeFileFS(w, r, assets.FS, "stylesheets/pico.min.css")
+		http.ServeFileFS(w, r, assets.FS, "stylesheets/base.css")
 	})
 
 	auth := s.authMiddleware

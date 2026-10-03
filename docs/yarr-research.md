@@ -311,7 +311,7 @@ GET    /fever/                 Fever API v3（yarr は Fever 互換、hayari は
 |---|---|---|
 | 外部互換 API | Fever API v3 | FreshRSS / Google Reader API |
 | フロントエンド | Vue.js 3 | Vanilla JS |
-| CSS | 独自スタイル | Pico CSS |
+| CSS | 独自スタイル | 独自スタイル（`base.css`） |
 | RSS パーサー | 独自実装 | mmcdole/gofeed 使用 |
 | フィルター機能 | なし | 汎用ルールはバックエンド API、フィード単位のタイトルキーワード非表示は Web UI 対応 |
 

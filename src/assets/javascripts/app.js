@@ -975,8 +975,9 @@ const App = (() => {
 
   function applySettings(s) {
     if (s.theme) {
-      // Pico CSS follows the system preference only when data-theme is absent;
-      // "auto" is not a recognized value and would lock the page to light mode.
+      // The stylesheet follows the system preference only when data-theme is
+      // absent; "auto" is not a recognized value and would lock the page to
+      // light mode.
       if (s.theme === 'auto') {
         document.documentElement.removeAttribute('data-theme');
         document.documentElement.removeAttribute('data-color-scheme');

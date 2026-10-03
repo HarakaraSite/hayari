@@ -13,7 +13,7 @@
 - [x] SQLite ストレージ（folders / feeds / items / filters / settings）
 - [x] マイグレーション機構
 - [x] 単一バイナリ向け frontend asset embed
-- [x] Pico CSS ベースの Vanilla JS フロントエンド
+- [x] 独自 CSS（`base.css`）ベースの Vanilla JS フロントエンド（Pico CSS 依存を除去、見た目は移行前と一致）
 - [x] systray 対応（gui ビルドタグ）
 - [x] makefile の基本ターゲット（build / build-gui / run / test / clean）
 

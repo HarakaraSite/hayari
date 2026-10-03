@@ -1,0 +1,814 @@
+/* base.css — Hayari base stylesheet (reset, theme, typography, forms)
+ *
+ * This file replaces the previously bundled Pico CSS. The theme values and
+ * element rules below are ported from Pico CSS v2.1.1 (MIT, https://picocss.com)
+ * so the appearance stays the same without any CSS library dependency.
+ */
+
+/* ── Theme variables ─────────────────────────────────────────── */
+
+:root {
+  color-scheme: light;
+
+  /* Typography */
+  --hayari-font-family-emoji: "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --hayari-font-family-sans-serif: system-ui, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, Helvetica, Arial, "Helvetica Neue", sans-serif, var(--hayari-font-family-emoji);
+  --hayari-font-family-monospace: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace, var(--hayari-font-family-emoji);
+  --hayari-line-height: 1.5;
+  --hayari-border-radius: 0.25rem;
+  --hayari-border-width: 0.0625rem;
+  --hayari-outline-width: 0.125rem;
+  --hayari-transition: 0.2s ease-in-out;
+  --hayari-spacing: 1rem;
+  --hayari-typography-spacing-top: 1.5rem;
+
+  /* Light theme colors */
+  --hayari-background-color: #fff;
+  --hayari-color: #373c44;
+  --hayari-text-selection-color: rgba(2, 154, 232, 0.25);
+  --hayari-muted-color: #646b79;
+  --hayari-muted-border-color: rgb(231, 234, 239.5);
+  --hayari-muted-background-color: #eff1f4;
+  --hayari-primary: #0172ad;
+  --hayari-primary-background: #0172ad;
+  --hayari-primary-hover: #015887;
+  --hayari-primary-hover-background: #02659a;
+  --hayari-primary-inverse: #fff;
+  --hayari-primary-focus: rgba(2, 154, 232, 0.5);
+  --hayari-primary-underline: rgba(1, 114, 173, 0.5);
+  --hayari-secondary: #5d6b89;
+  --hayari-secondary-background: #525f7a;
+  --hayari-secondary-hover: #48536b;
+  --hayari-secondary-hover-background: #48536b;
+  --hayari-secondary-inverse: #fff;
+  --hayari-secondary-focus: rgba(93, 107, 137, 0.25);
+  --hayari-heading-1-color: #2d3138;
+  --hayari-heading-2-color: #373c44;
+  --hayari-heading-3-color: #424751;
+  --hayari-heading-4-color: #4d535e;
+  --hayari-heading-5-color: #5c6370;
+  --hayari-heading-6-color: #646b79;
+  --hayari-mark-background-color: rgb(252.5, 230.5, 191.5);
+  --hayari-mark-color: #0f1114;
+  --hayari-ins-color: rgb(28.5, 105.5, 84);
+  --hayari-del-color: rgb(136, 56.5, 53);
+  --hayari-code-background-color: rgb(243, 244.5, 246.75);
+  --hayari-code-color: #646b79;
+
+  /* Form elements */
+  --hayari-form-element-background-color: rgb(251, 251.5, 252.25);
+  --hayari-form-element-border-color: #cfd5e2;
+  --hayari-form-element-color: #23262c;
+  --hayari-form-element-placeholder-color: var(--hayari-muted-color);
+  --hayari-form-element-active-background-color: #fff;
+  --hayari-form-element-active-border-color: var(--hayari-primary-background);
+
+  /* Cards and modals */
+  --hayari-card-background-color: var(--hayari-background-color);
+  --hayari-card-border-color: var(--hayari-muted-border-color);
+  --hayari-card-sectioning-background-color: rgb(251, 251.5, 252.25);
+  --hayari-modal-overlay-background-color: rgba(232, 234, 237, 0.75);
+  --hayari-box-shadow: 0.0145rem 0.029rem 0.174rem rgba(129, 145, 181, 0.01698), 0.0335rem 0.067rem 0.402rem rgba(129, 145, 181, 0.024), 0.0625rem 0.125rem 0.75rem rgba(129, 145, 181, 0.03), 0.1125rem 0.225rem 1.35rem rgba(129, 145, 181, 0.036), 0.2085rem 0.417rem 2.502rem rgba(129, 145, 181, 0.04302), 0.5rem 1rem 6rem rgba(129, 145, 181, 0.06), 0 0 0 0.0625rem rgba(129, 145, 181, 0.015);
+}
+
+/* Dark theme. The theme follows the system preference only while data-theme is
+   absent; the application sets data-theme="light"/"dark" from Settings. */
+@media only screen and (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+
+    --hayari-background-color: rgb(19, 22.5, 30.5);
+    --hayari-color: #c2c7d0;
+    --hayari-text-selection-color: rgba(1, 170, 255, 0.1875);
+    --hayari-muted-color: #7b8495;
+    --hayari-muted-border-color: #202632;
+    --hayari-muted-background-color: #202632;
+    --hayari-primary: #01aaff;
+    --hayari-primary-background: #0172ad;
+    --hayari-primary-hover: #79c0ff;
+    --hayari-primary-hover-background: #017fc0;
+    --hayari-primary-inverse: #fff;
+    --hayari-primary-focus: rgba(1, 170, 255, 0.375);
+    --hayari-primary-underline: rgba(1, 170, 255, 0.5);
+    --hayari-secondary: #969eaf;
+    --hayari-secondary-background: #525f7a;
+    --hayari-secondary-hover: #b3b9c5;
+    --hayari-secondary-hover-background: #5d6b89;
+    --hayari-secondary-inverse: #fff;
+    --hayari-secondary-focus: rgba(144, 158, 190, 0.25);
+    --hayari-heading-1-color: #f0f1f3;
+    --hayari-heading-2-color: #e0e3e7;
+    --hayari-heading-3-color: #c2c7d0;
+    --hayari-heading-4-color: #b3b9c5;
+    --hayari-heading-5-color: #a4acba;
+    --hayari-heading-6-color: #8891a4;
+    --hayari-mark-background-color: #014063;
+    --hayari-mark-color: #fff;
+    --hayari-ins-color: #62af9a;
+    --hayari-del-color: rgb(205.5, 126, 123);
+    --hayari-code-background-color: rgb(26, 30.5, 40.25);
+    --hayari-code-color: #8891a4;
+
+    --hayari-form-element-background-color: rgb(28, 33, 43.5);
+    --hayari-form-element-border-color: #2a3140;
+    --hayari-form-element-color: #e0e3e7;
+    --hayari-form-element-placeholder-color: #8891a4;
+    --hayari-form-element-active-background-color: rgb(26, 30.5, 40.25);
+    --hayari-form-element-active-border-color: var(--hayari-primary-background);
+
+    --hayari-card-background-color: #181c25;
+    --hayari-card-border-color: #181c25;
+    --hayari-card-sectioning-background-color: rgb(26, 30.5, 40.25);
+    --hayari-modal-overlay-background-color: rgba(7.5, 8.5, 10, 0.75);
+    --hayari-box-shadow: 0.0145rem 0.029rem 0.174rem rgba(7, 8.5, 12, 0.01698), 0.0335rem 0.067rem 0.402rem rgba(7, 8.5, 12, 0.024), 0.0625rem 0.125rem 0.75rem rgba(7, 8.5, 12, 0.03), 0.1125rem 0.225rem 1.35rem rgba(7, 8.5, 12, 0.036), 0.2085rem 0.417rem 2.502rem rgba(7, 8.5, 12, 0.04302), 0.5rem 1rem 6rem rgba(7, 8.5, 12, 0.06), 0 0 0 0.0625rem rgba(7, 8.5, 12, 0.015);
+  }
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --hayari-background-color: rgb(19, 22.5, 30.5);
+  --hayari-color: #c2c7d0;
+  --hayari-text-selection-color: rgba(1, 170, 255, 0.1875);
+  --hayari-muted-color: #7b8495;
+  --hayari-muted-border-color: #202632;
+  --hayari-muted-background-color: #202632;
+  --hayari-primary: #01aaff;
+  --hayari-primary-background: #0172ad;
+  --hayari-primary-hover: #79c0ff;
+  --hayari-primary-hover-background: #017fc0;
+  --hayari-primary-inverse: #fff;
+  --hayari-primary-focus: rgba(1, 170, 255, 0.375);
+  --hayari-primary-underline: rgba(1, 170, 255, 0.5);
+  --hayari-secondary: #969eaf;
+  --hayari-secondary-background: #525f7a;
+  --hayari-secondary-hover: #b3b9c5;
+  --hayari-secondary-hover-background: #5d6b89;
+  --hayari-secondary-inverse: #fff;
+  --hayari-secondary-focus: rgba(144, 158, 190, 0.25);
+  --hayari-heading-1-color: #f0f1f3;
+  --hayari-heading-2-color: #e0e3e7;
+  --hayari-heading-3-color: #c2c7d0;
+  --hayari-heading-4-color: #b3b9c5;
+  --hayari-heading-5-color: #a4acba;
+  --hayari-heading-6-color: #8891a4;
+  --hayari-mark-background-color: #014063;
+  --hayari-mark-color: #fff;
+  --hayari-ins-color: #62af9a;
+  --hayari-del-color: rgb(205.5, 126, 123);
+  --hayari-code-background-color: rgb(26, 30.5, 40.25);
+  --hayari-code-color: #8891a4;
+
+  --hayari-form-element-background-color: rgb(28, 33, 43.5);
+  --hayari-form-element-border-color: #2a3140;
+  --hayari-form-element-color: #e0e3e7;
+  --hayari-form-element-placeholder-color: #8891a4;
+  --hayari-form-element-active-background-color: rgb(26, 30.5, 40.25);
+  --hayari-form-element-active-border-color: var(--hayari-primary-background);
+
+  --hayari-card-background-color: #181c25;
+  --hayari-card-border-color: #181c25;
+  --hayari-card-sectioning-background-color: rgb(26, 30.5, 40.25);
+  --hayari-modal-overlay-background-color: rgba(7.5, 8.5, 10, 0.75);
+  --hayari-box-shadow: 0.0145rem 0.029rem 0.174rem rgba(7, 8.5, 12, 0.01698), 0.0335rem 0.067rem 0.402rem rgba(7, 8.5, 12, 0.024), 0.0625rem 0.125rem 0.75rem rgba(7, 8.5, 12, 0.03), 0.1125rem 0.225rem 1.35rem rgba(7, 8.5, 12, 0.036), 0.2085rem 0.417rem 2.502rem rgba(7, 8.5, 12, 0.04302), 0.5rem 1rem 6rem rgba(7, 8.5, 12, 0.06), 0 0 0 0.0625rem rgba(7, 8.5, 12, 0.015);
+}
+
+/* ── Reset ───────────────────────────────────────────────────── */
+
+*,
+::before,
+::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  font-size: 100%;
+  background-color: var(--hayari-background-color);
+  color: var(--hayari-color);
+  font-family: var(--hayari-font-family-sans-serif);
+  font-weight: 400;
+  line-height: var(--hayari-line-height);
+  text-rendering: optimizeLegibility;
+  overflow-wrap: break-word;
+}
+
+/* Pages that do not load app.css (the login page) scale the root font size
+   with the viewport. app.css pins it back to 100% for the dense reader UI. */
+@media (min-width: 576px) {
+  html { font-size: 106.25%; }
+}
+
+@media (min-width: 768px) {
+  html { font-size: 112.5%; }
+}
+
+@media (min-width: 1024px) {
+  html { font-size: 118.75%; }
+}
+
+@media (min-width: 1280px) {
+  html { font-size: 125%; }
+}
+
+@media (min-width: 1536px) {
+  html { font-size: 131.25%; }
+}
+
+body {
+  margin: 0;
+}
+
+::selection {
+  background-color: var(--hayari-text-selection-color);
+}
+
+[hidden],
+template {
+  display: none !important;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  border-style: none;
+}
+
+svg:not(:root) {
+  overflow: hidden;
+}
+
+/* ── Typography ──────────────────────────────────────────────── */
+
+h1, h2, h3, h4, h5, h6 {
+  --hayari-heading-size: 1rem;
+  --hayari-heading-line-height: var(--hayari-line-height);
+  --hayari-typography-spacing-top: 1.5rem;
+  margin: 0 0 1rem;
+  color: var(--hayari-color);
+  font-weight: 700;
+  font-size: var(--hayari-heading-size);
+  line-height: var(--hayari-heading-line-height);
+}
+
+h1 { --hayari-heading-size: 2rem;     --hayari-heading-line-height: 1.125; --hayari-typography-spacing-top: 3rem;     color: var(--hayari-heading-1-color); }
+h2 { --hayari-heading-size: 1.75rem;  --hayari-heading-line-height: 1.15;  --hayari-typography-spacing-top: 2.625rem; color: var(--hayari-heading-2-color); }
+h3 { --hayari-heading-size: 1.5rem;   --hayari-heading-line-height: 1.175; --hayari-typography-spacing-top: 2.25rem;  color: var(--hayari-heading-3-color); }
+h4 { --hayari-heading-size: 1.25rem;  --hayari-heading-line-height: 1.2;   --hayari-typography-spacing-top: 1.874rem; color: var(--hayari-heading-4-color); }
+h5 { --hayari-heading-size: 1.125rem; --hayari-heading-line-height: 1.225; --hayari-typography-spacing-top: 1.6875rem; color: var(--hayari-heading-5-color); }
+h6 { --hayari-heading-size: 1rem;     --hayari-heading-line-height: 1.25;  --hayari-typography-spacing-top: 1.5rem;   color: var(--hayari-heading-6-color); }
+
+:where(article, address, blockquote, dl, figure, form, ol, p, pre, table, ul) ~ :is(h1, h2, h3, h4, h5, h6) {
+  margin-top: var(--hayari-typography-spacing-top);
+}
+
+address, blockquote, dl, ol, p, pre, table, ul {
+  margin: 0 0 1rem;
+  color: var(--hayari-color);
+  font-style: normal;
+  font-weight: 400;
+}
+
+:where(ol, ul) li {
+  margin-bottom: calc(1rem * 0.25);
+}
+
+:where(dl, ol, ul) :where(dl, ol, ul) {
+  margin: 0;
+  margin-top: calc(1rem * 0.25);
+}
+
+ul li {
+  list-style: square;
+}
+
+b, strong {
+  font-weight: bolder;
+}
+
+mark {
+  padding: 0.125rem 0.25rem;
+  background-color: var(--hayari-mark-background-color);
+  color: var(--hayari-mark-color);
+  vertical-align: baseline;
+}
+
+ins {
+  color: var(--hayari-ins-color);
+  text-decoration: none;
+}
+
+del {
+  color: var(--hayari-del-color);
+}
+
+abbr[title] {
+  border-bottom: 1px dotted;
+  text-decoration: none;
+  cursor: help;
+}
+
+hr {
+  height: 0;
+  margin: 1rem 0;
+  border: 0;
+  border-top: 1px solid var(--hayari-muted-border-color);
+  color: inherit;
+}
+
+blockquote {
+  display: block;
+  margin: 1rem 0;
+  padding: 1rem;
+  border-right: none;
+  border-left: 0.25rem solid var(--hayari-muted-border-color);
+}
+
+blockquote footer {
+  margin-top: calc(1rem * 0.5);
+  color: var(--hayari-muted-color);
+}
+
+figure {
+  display: block;
+  margin: 0;
+  padding: 0;
+}
+
+figure figcaption {
+  padding: calc(1rem * 0.5) 0;
+  color: var(--hayari-muted-color);
+}
+
+/* ── Links ───────────────────────────────────────────────────── */
+
+a {
+  /* Like the previous base stylesheet, links re-point the color variables so
+     components that reference them (e.g. .icon-btn) follow the link color. */
+  --hayari-color: var(--hayari-primary);
+  --hayari-background-color: transparent;
+  color: var(--hayari-primary);
+  text-decoration: underline;
+  text-decoration-color: var(--hayari-primary-underline);
+  text-underline-offset: 0.125em;
+  transition: color var(--hayari-transition), text-decoration-color var(--hayari-transition);
+}
+
+a:hover,
+a:focus {
+  --hayari-color: var(--hayari-primary-hover);
+  color: var(--hayari-primary-hover);
+  text-decoration-color: var(--hayari-primary-hover);
+}
+
+a:focus-visible {
+  outline: var(--hayari-outline-width) solid var(--hayari-primary-focus);
+  outline-offset: 2px;
+}
+
+/* ── Code ────────────────────────────────────────────────────── */
+
+code, kbd, pre, samp {
+  font-size: 0.875em;
+  font-family: var(--hayari-font-family-monospace);
+  border-radius: var(--hayari-border-radius);
+  background: var(--hayari-code-background-color);
+  color: var(--hayari-code-color);
+  font-weight: 400;
+  line-height: initial;
+}
+
+code, kbd, samp {
+  display: inline-block;
+  padding: 0.375rem;
+}
+
+pre {
+  display: block;
+  overflow-x: auto;
+}
+
+pre > code,
+pre > samp {
+  display: block;
+  padding: 1rem;
+  background: none;
+  line-height: var(--hayari-line-height);
+}
+
+pre code,
+pre samp {
+  font-size: inherit;
+  font-family: inherit;
+}
+
+/* ── Form elements ───────────────────────────────────────────── */
+
+fieldset legend,
+label {
+  display: block;
+  margin-bottom: calc(1rem * 0.375);
+  color: var(--hayari-color);
+  font-weight: 400;
+}
+
+label > input,
+label > select,
+label > textarea {
+  margin-top: calc(1rem * 0.25);
+}
+
+label:has([type="checkbox"], [type="radio"]) {
+  width: fit-content;
+  cursor: pointer;
+}
+
+[type="checkbox"] ~ label,
+[type="radio"] ~ label {
+  display: inline-block;
+  margin-bottom: 0;
+  cursor: pointer;
+}
+
+input,
+optgroup,
+select,
+textarea {
+  margin: 0;
+  font-size: 1rem;
+  line-height: var(--hayari-line-height);
+  font-family: inherit;
+  letter-spacing: inherit;
+}
+
+input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]),
+select,
+textarea {
+  appearance: none;
+  padding: 0.75rem 1rem;
+}
+
+input,
+select,
+textarea {
+  border: var(--hayari-border-width) solid var(--hayari-form-element-border-color);
+  border-radius: var(--hayari-border-radius);
+  outline: 0;
+  background-color: var(--hayari-form-element-background-color);
+  color: var(--hayari-form-element-color);
+}
+
+input:not([type="checkbox"], [type="radio"], [type="range"]) {
+  height: calc(1rem * var(--hayari-line-height) + 0.75rem * 2 + var(--hayari-border-width) * 2);
+}
+
+button[type="submit"],
+input:not([type="checkbox"], [type="radio"]),
+select,
+textarea {
+  width: 100%;
+}
+
+input:not([type="checkbox"], [type="radio"]),
+select,
+textarea {
+  margin-bottom: 1rem;
+}
+
+/* Pico-compatible focus states: text-like fields get the active background,
+   every field (including checkboxes and radios) the active border, and the
+   0.0625rem focus ring. */
+:where(select, textarea):not([readonly]):is(:active, :focus),
+input:not([type="submit"], [type="button"], [type="reset"], [type="checkbox"], [type="radio"], [type="file"]):not([readonly]):is(:active, :focus) {
+  background-color: var(--hayari-form-element-active-background-color);
+}
+
+:where(select, textarea):not([readonly]):is(:active, :focus),
+input:not([type="submit"], [type="button"], [type="reset"], [readonly]):is(:active, :focus) {
+  border-color: var(--hayari-form-element-active-border-color);
+}
+
+:where(select, textarea):not([readonly]):focus,
+input:not([type="submit"], [type="button"], [type="reset"], [type="range"], [type="file"], [readonly]):focus {
+  box-shadow: 0 0 0 0.0625rem var(--hayari-form-element-active-border-color);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--hayari-form-element-placeholder-color);
+  opacity: 1;
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+select {
+  text-transform: none;
+}
+
+textarea {
+  display: block;
+  resize: vertical;
+}
+
+select:not([multiple], [size]) {
+  padding-right: calc(1rem + 1.5rem);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='rgb(136, 145, 164)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-position: center right 0.75rem;
+  background-size: 1rem auto;
+  background-repeat: no-repeat;
+}
+
+select[multiple] option:checked {
+  background: var(--hayari-form-element-active-background-color);
+  color: var(--hayari-form-element-color);
+}
+
+:where(input, select, textarea, fieldset) + small {
+  display: block;
+  width: 100%;
+  margin-top: calc(1rem * -0.75);
+  margin-bottom: 1rem;
+  color: var(--hayari-muted-color);
+}
+
+/* Checkboxes and radios */
+[type="checkbox"],
+[type="radio"] {
+  appearance: none;
+  width: 1.25em;
+  height: 1.25em;
+  margin: 0;
+  margin-top: -0.125em;
+  margin-inline-end: 0.5em;
+  padding: 0;
+  border-width: 0.125rem;
+  border-style: solid;
+  border-color: var(--hayari-form-element-border-color);
+  border-radius: var(--hayari-border-radius);
+  background-color: var(--hayari-form-element-background-color);
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+[type="radio"] {
+  border-radius: 50%;
+}
+
+[type="checkbox"]:checked,
+[type="radio"]:checked {
+  border-color: var(--hayari-primary-background);
+  background-color: var(--hayari-primary-background);
+  background-position: center;
+  background-size: 0.75em auto;
+  background-repeat: no-repeat;
+}
+
+[type="checkbox"]:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='rgb(255, 255, 255)' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
+}
+
+[type="checkbox"]:indeterminate {
+  border-color: var(--hayari-primary-background);
+  background-color: var(--hayari-primary-background);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='rgb(255, 255, 255)' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='5' y1='12' x2='19' y2='12'/%3E%3C/svg%3E");
+  background-position: center;
+  background-size: 0.75em auto;
+  background-repeat: no-repeat;
+}
+
+[type="radio"]:checked {
+  border-width: 0.35em;
+  background-color: var(--hayari-primary-inverse);
+  background-image: none;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────── */
+
+button {
+  margin: 0;
+  overflow: visible;
+  font-family: inherit;
+  text-transform: none;
+}
+
+button,
+[type="button"],
+[type="reset"],
+[type="submit"] {
+  appearance: button;
+  padding: 0.75rem 1rem;
+  border: var(--hayari-border-width) solid var(--hayari-primary-background);
+  border-radius: var(--hayari-border-radius);
+  outline: 0;
+  background-color: var(--hayari-primary-background);
+  color: var(--hayari-primary-inverse);
+  font-size: 1rem;
+  line-height: var(--hayari-line-height);
+  cursor: pointer;
+  transition: background-color var(--hayari-transition), border-color var(--hayari-transition), color var(--hayari-transition);
+}
+
+[type="button"],
+[type="reset"],
+[type="submit"] {
+  margin-bottom: 1rem;
+}
+
+button:hover,
+button:focus,
+[type="button"]:hover,
+[type="button"]:focus,
+[type="reset"]:hover,
+[type="reset"]:focus,
+[type="submit"]:hover,
+[type="submit"]:focus {
+  border-color: var(--hayari-primary-hover-background);
+  background-color: var(--hayari-primary-hover-background);
+  color: var(--hayari-primary-inverse);
+}
+
+button:focus,
+[type="button"]:focus,
+[type="reset"]:focus,
+[type="submit"]:focus {
+  box-shadow: 0 0 0 var(--hayari-outline-width) var(--hayari-primary-focus);
+}
+
+button.secondary,
+[type="button"].secondary {
+  border-color: var(--hayari-secondary-background);
+  background-color: var(--hayari-secondary-background);
+  color: var(--hayari-secondary-inverse);
+}
+
+button.secondary:hover,
+button.secondary:focus,
+[type="button"].secondary:hover,
+[type="button"].secondary:focus {
+  border-color: var(--hayari-secondary-hover-background);
+  background-color: var(--hayari-secondary-hover-background);
+  color: var(--hayari-secondary-inverse);
+}
+
+button.secondary:focus,
+[type="button"].secondary:focus {
+  box-shadow: 0 0 0 var(--hayari-outline-width) var(--hayari-secondary-focus);
+}
+
+button.outline,
+[type="button"].outline {
+  border-color: var(--hayari-primary);
+  background-color: transparent;
+  color: var(--hayari-primary);
+}
+
+button.outline:hover,
+button.outline:focus,
+[type="button"].outline:hover,
+[type="button"].outline:focus {
+  border-color: var(--hayari-primary-hover);
+  background-color: transparent;
+  color: var(--hayari-primary-hover);
+}
+
+button.outline.secondary,
+[type="button"].outline.secondary {
+  border-color: var(--hayari-secondary);
+  color: var(--hayari-secondary);
+}
+
+button.outline.secondary:hover,
+button.outline.secondary:focus,
+[type="button"].outline.secondary:hover,
+[type="button"].outline.secondary:focus {
+  border-color: var(--hayari-secondary-hover);
+  color: var(--hayari-secondary-hover);
+}
+
+button.small,
+[type="button"].small,
+[type="submit"].small {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+button:disabled,
+[type="button"]:disabled,
+[type="reset"]:disabled,
+[type="submit"]:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* ── Tables ──────────────────────────────────────────────────── */
+
+:where(table) {
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+  text-indent: 0;
+}
+
+td,
+th {
+  padding: calc(1rem / 2) 1rem;
+  border-bottom: var(--hayari-border-width) solid var(--hayari-muted-border-color);
+  background-color: var(--hayari-background-color);
+  color: var(--hayari-color);
+  font-weight: 400;
+  text-align: left;
+}
+
+thead td,
+thead th {
+  font-weight: 600;
+  border-bottom-width: 0.1875rem;
+}
+
+tfoot td,
+tfoot th {
+  border-top-width: 0.1875rem;
+  border-bottom: 0;
+}
+
+/* ── Cards and modals ────────────────────────────────────────── */
+
+article {
+  margin-bottom: 1rem;
+  padding: 1rem 1rem;
+  border-radius: var(--hayari-border-radius);
+  background: var(--hayari-card-background-color);
+  box-shadow: var(--hayari-box-shadow);
+}
+
+article > footer,
+article > header {
+  margin-right: -1rem;
+  margin-left: -1rem;
+  padding: calc(1rem * 0.66) 1rem;
+  background-color: var(--hayari-card-sectioning-background-color);
+}
+
+article > header {
+  margin-top: -1rem;
+  margin-bottom: 1rem;
+  border-bottom: var(--hayari-border-width) solid var(--hayari-card-border-color);
+  border-top-right-radius: var(--hayari-border-radius);
+  border-top-left-radius: var(--hayari-border-radius);
+}
+
+article > footer {
+  margin-top: 1rem;
+  margin-bottom: -1rem;
+  border-top: var(--hayari-border-width) solid var(--hayari-card-border-color);
+  border-bottom-right-radius: var(--hayari-border-radius);
+  border-bottom-left-radius: var(--hayari-border-radius);
+}
+
+dialog {
+  display: flex;
+  z-index: 999;
+  position: fixed;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  width: inherit;
+  min-width: 100%;
+  height: inherit;
+  min-height: 100%;
+  padding: 0;
+  border: 0;
+  backdrop-filter: blur(0.375rem);
+  background-color: var(--hayari-modal-overlay-background-color);
+  color: var(--hayari-color);
+}
+
+dialog:not([open]) {
+  display: none;
+}
+
+dialog > article {
+  width: 100%;
+  max-height: calc(100vh - 1rem * 2);
+  margin: 1rem;
+  overflow: auto;
+}
+
+dialog > article > header > * {
+  margin-bottom: 0;
+}
+
+dialog > article > header .close,
+dialog > article > header :is(a, button)[rel="prev"] {
+  margin: 0;
+  margin-left: 1rem;
+  padding: 0;
+  float: right;
+}

@@ -87,7 +87,7 @@ func TestTitleTranslationCapabilityAndUnavailableStart(t *testing.T) {
 
 func TestStaticAssetsAreNotCached(t *testing.T) {
 	_, ts := newTestServer(t)
-	for _, path := range []string{"/", "/stylesheets/pico.min.css", "/stylesheets/app.css", "/javascripts/api.js", "/javascripts/key.js", "/javascripts/app.js"} {
+	for _, path := range []string{"/", "/stylesheets/base.css", "/stylesheets/app.css", "/javascripts/api.js", "/javascripts/key.js", "/javascripts/app.js"} {
 		resp := doRequest(t, ts, http.MethodGet, path, "")
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
@@ -161,8 +161,8 @@ func TestUnauthenticatedWebLoginDoesNotChallengeBasicAuth(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// The public login page can load its only external stylesheet.
-	resp = request("/stylesheets/pico.min.css")
+	// The public login page can load its bundled stylesheet.
+	resp = request("/stylesheets/base.css")
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		t.Fatalf("GET login stylesheet = %d, want 200", resp.StatusCode)
@@ -224,7 +224,7 @@ func TestIndexUsesUnversionedLocalAssets(t *testing.T) {
 		t.Fatal(err)
 	}
 	page := string(body)
-	for _, asset := range []string{"/hayari-mark.svg", "/stylesheets/pico.min.css", "/stylesheets/app.css", "/javascripts/api.js", "/javascripts/key.js", "/javascripts/app.js"} {
+	for _, asset := range []string{"/hayari-mark.svg", "/stylesheets/base.css", "/stylesheets/app.css", "/javascripts/api.js", "/javascripts/key.js", "/javascripts/app.js"} {
 		if !strings.Contains(page, asset) {
 			t.Errorf("index does not reference %s", asset)
 		}
@@ -237,7 +237,7 @@ func TestIndexUsesUnversionedLocalAssets(t *testing.T) {
 	}
 }
 
-func TestLoginUsesLocalPicoCSS(t *testing.T) {
+func TestLoginUsesLocalStylesheet(t *testing.T) {
 	_, ts := newTestServer(t)
 	resp := doRequest(t, ts, http.MethodGet, "/login", "")
 	defer resp.Body.Close()
@@ -247,8 +247,8 @@ func TestLoginUsesLocalPicoCSS(t *testing.T) {
 		t.Fatal(err)
 	}
 	page := string(body)
-	if !strings.Contains(page, "/stylesheets/pico.min.css") {
-		t.Error("login does not reference the bundled Pico CSS")
+	if !strings.Contains(page, "/stylesheets/base.css") {
+		t.Error("login does not reference the bundled base stylesheet")
 	}
 	if strings.Contains(page, "https://") {
 		t.Error("login must not reference external assets")

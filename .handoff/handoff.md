@@ -1234,3 +1234,20 @@
 - 実施: `1726110` を注釈付き `v1.2.5` として公開。release profileをv2へ移行し、失敗時のRelease upload経路を除去した。Forgejo Actions run 19が成功し、6バイナリと`SHA256SUMS`を公開。linux/arm64公開物のSHA-256と埋め込み版番号`v1.2.5`を確認した。
 - 次: なし。
 - 注意: ユーザー判断により今回の追加手動ゲート（race・実サービスE2E・実TTY）は実行していない。通常ゲートと100件一覧のPlaywright APIモックE2Eは成功済み。
+
+## 2026-10-03 16:30 JST
+
+- 実行エージェント: pi
+- 作業トピック: Pico CSS 依存の除去（独自 base.css へ移行）
+
+### 実施したこと
+- 同梱していた Pico CSS 2.1.1（`src/assets/stylesheets/pico.min.css`）を削除し、独自の `src/assets/stylesheets/base.css` を新規作成した。テーマ変数を `--hayari-*` に改名し、リセット・タイポグラフィ・フォーム・ボタン・カード・ダイアログの各ルールと Pico 由来の配色値を移植した。
+- `index.html` / `login.html` の参照、`routes.go` の公開スタイルシート経路（`/stylesheets/base.css`）、`routes_test.go` のテスト（`TestLoginUsesLocalStylesheet`）を base.css 向けに更新し、`app.css`・`app.js` の Pico 言及を整理した。
+- 見た目検証は Playwright で実施。旧（Pico）／新（base.css）のログイン・一覧・記事・追加ダイアログ・設定ダイアログ・ダークテーマ計8画面のスクリーンショットがピクセル一致し、主要要素の computed style・座標比較も一致した。
+
+### 次のタスク候補
+- 変更のレビュー後にコミット・push。推奨コミットは `refactor: replace Pico CSS with bundled base stylesheet`。
+
+### 連絡・注意事項
+- 移行中に見つけた挙動差2件を Pico 互換へ合わせた。1) リンク要素が `--pico-color` をプライマリ色へ再定義するため `.icon-btn` のログアウト記号が青くなる挙動は `a` 上の `--hayari-color` 再定義で維持。2) `--pico-muted-background-color` は Pico 未定義でホバー背景が無効だったが、`--hayari-muted-background-color` を定義して薄いホバー表示が有効になった（意図的な唯一の見た目差分。`transparent` にすれば無効化できる）。
+- 変更は未コミット（`.handoff/handoff.md`、README 英日、`docs/tasks.md`、`docs/yarr-research.md`、assets、routes / routes_test 含む）。`go test ./...`・`go vet ./...`・`node --check` 成功済み。
