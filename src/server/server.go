@@ -6,6 +6,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/netip"
+	"os"
 	"sync"
 	"time"
 
@@ -31,14 +33,15 @@ type Server struct {
 	AllowInsecureNoAuth  bool
 	SecureCookie         bool
 
-	authKey      []byte
-	db           *storage.Storage
-	worker       *worker.Worker
-	translations *titletranslation.Manager
-	http         *http.Server
-	logins       *loginRateLimiter
-	tokenMu      sync.RWMutex
-	tokens       map[string]time.Time
+	authKey        []byte
+	db             *storage.Storage
+	worker         *worker.Worker
+	translations   *titletranslation.Manager
+	http           *http.Server
+	logins         *loginRateLimiter
+	trustedProxies map[netip.Addr]struct{}
+	tokenMu        sync.RWMutex
+	tokens         map[string]time.Time
 }
 
 func New(db *storage.Storage, addr, username, password, version string) *Server {
@@ -61,6 +64,11 @@ func NewWithTitleTranslation(db *storage.Storage, addr, username, password, vers
 }
 
 func (s *Server) Start() error {
+	proxies, err := parseTrustedProxies(os.Getenv("HAYARI_TRUSTED_PROXIES"))
+	if err != nil {
+		return err
+	}
+	s.trustedProxies = proxies
 	if s.Username == "" && s.Password == "" && !s.AllowInsecureNoAuth && !isLoopbackAddress(s.Addr) {
 		return fmt.Errorf("refusing unauthenticated non-loopback listener %q; configure --user/--pass or explicitly allow insecure access", s.Addr)
 	}

@@ -64,7 +64,7 @@ func (s *Server) greaderLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	ip := clientIP(r)
+	ip := s.clientIP(r)
 	if !s.logins.allowed(ip, time.Now()) {
 		http.Error(w, "too many login attempts", http.StatusTooManyRequests)
 		return

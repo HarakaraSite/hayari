@@ -29,6 +29,16 @@
 
 ## Checkpoints
 
+## 2026-10-09
+
+- 実行エージェント: Codex
+- 作業トピック: Caddy 経由のログイン失敗制限
+- 対象: `35cef6b1f4e4fe8c34af98e2c9396ec1472e7cb3` を起点に `fix/caddy-login-rate-limit` でローカル修正。repository 内に `AGENTS.md` はなく、利用者提示の共通指示と既存 CI 定義を参照した。
+- 実施: `HAYARI_TRUSTED_PROXIES` の IPv4/IPv6 リテラル一覧を起動時に検証。実 TCP 接続元が一致したときだけ XFF 末尾の IP を使い、未設定・未信頼・XFF 欠落/末尾不正では接続元 IP を使う。Web/GReader/別名経路は共通判定と従来の5回失敗・15分ロックを維持。英日 README に同一/別 LXC、IPv6 loopback、systemd の例を追加した。差分レビューで IPv6 TCP peer の interface zone 表記と設定 literal の不一致を確認し、信頼判定時だけ zone を除いて一致させる修正と再現テストを追加した。
+- 検証: 修正前は `go test ./src/server -run '^TestLoginRateLimitBehindCaddy$' -count=1` で、A の5失敗後に B が429となる問題を再現。修正後は同テストを含む `go test ./src/server -count=1`、`go test ./...`、`go vet ./...`、`go mod verify`、`go build -o /tmp/hayari-caddy-login-check ./cmd/hayari`、`git diff --check` が成功。ローカル起動したバイナリでも、環境変数の反映、経路間の失敗共有、A のロック中の B の成功と A のロック維持、Cookie/token の使用、未設定時の XFF 無視、不正設定の起動エラー、SIGTERM 終了を確認した。一時 DB と検証バイナリは削除した。
+- 制約: `go test -race ./...` は CGO 無効で実行不可。`CGO_ENABLED=1 go test -race ./...` も `gcc` がないためビルド不可。race は pre-release 参考検査で、通常 CI の必須 build/test/vet は成功。UI を変更していないためブラウザ E2E は対象外。実 Caddy・本番 LXC の検証、push、release、本番反映は行っていない。
+- 本番反映: Hayari の起動環境に、実際に見える Caddy の接続元 IP を設定して再起動する。同一 LXC は `127.0.0.1,::1`、別 LXC は Caddy 側の接続元 IP。systemd は unit を再読み込みする。設定例は README を参照。
+
 ## 2026-07-30 14:59 JST
 
 - 実行エージェント: Codex

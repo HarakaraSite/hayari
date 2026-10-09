@@ -86,12 +86,63 @@ Hayari 自体は TLS を提供しません。Caddy や nginx など、TLS を終
 ブラウザ / RSS クライアント -- HTTPS --> リバースプロキシ -- HTTP --> Hayari (127.0.0.1:7070)
 ```
 
-- Hayari は `127.0.0.1` に bind し、HTTP リスナーをインターネットへ直接公開しないでください。
+- プロキシが同じホストなら loopback、別 LXC なら Hayari のプライベートインターフェースへ bind し、HTTP リスナーをインターネットへ直接公開しないでください。
 - リバースプロキシで HTTP から HTTPS へのリダイレクトを設定してください。
 - 本番運用では必ず `--user` と `--pass` の両方を設定してください。両方がない場合、Hayari はローカル開発のため認証なしのリクエストを許可します。
 - Hayari は既定で、loopback 外の認証なしリスナーを拒否します。`--allow-insecure-no-auth` は意図したローカル／テスト用途に限って、この保護を明示的に解除します。
 - リバースプロキシのアクセスログには要求 URL が含まれるため、機密情報として扱ってください。
 - リバースプロキシで HTTPS を終端する場合は、ブラウザセッション Cookie を HTTPS 経由だけで送るため `--secure-cookie` を指定して起動してください。
+
+### Caddy 経由のログイン失敗制限
+
+Hayari の環境変数 `HAYARI_TRUSTED_PROXIES` に、Caddy が Hayari へ接続するときの
+送信元 IP を設定してください。カンマ区切りの IPv4／IPv6 リテラルを受け付けます
+（例: `127.0.0.1,::1`）。各値の前後の空白は許容します。ホスト名、CIDR、ポート付きの
+値、空の要素は起動時エラーになります。未設定または空文字列では転送ヘッダーを信頼しません。
+
+実際の TCP 接続元が設定済み IP と一致する場合だけ、`X-Forwarded-For` の末尾の IP を
+使います。この値は [Caddy が標準で設定または追加します](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#defaults)。
+任意の先頭値は信頼しません。XFF がない場合や末尾が IP リテラルでない場合は、
+実際の TCP 接続元 IP を使います。
+
+Web の `/login`、`/accounts/ClientLogin`、`/api/greader.php/accounts/ClientLogin` は
+クライアント IP ごとの失敗回数を共有し、5回の失敗でその IP を15分ロックします。
+プロキシを設定すれば、同じ Caddy を通る別クライアントはログインでき、その成功で
+ロック中のクライアントの失敗回数がリセットされることもありません。
+
+Caddy と Hayari が **同一 LXC** の場合:
+
+```sh
+HAYARI_TRUSTED_PROXIES=127.0.0.1,::1 ./hayari \
+  --addr 127.0.0.1:7070 --user your-user --pass your-password --secure-cookie
+```
+
+```caddyfile
+hayari.example.com {
+    reverse_proxy 127.0.0.1:7070
+}
+```
+
+IPv6 loopback を使う場合は、`--addr '[::1]:7070'` と `reverse_proxy [::1]:7070` にします。
+
+**別 LXC** で、たとえば Caddy が `10.0.0.10`、Hayari が `10.0.0.11` の場合:
+
+```sh
+HAYARI_TRUSTED_PROXIES=10.0.0.10 ./hayari \
+  --addr 10.0.0.11:7070 --user your-user --pass your-password --secure-cookie
+```
+
+```caddyfile
+hayari.example.com {
+    reverse_proxy 10.0.0.11:7070
+}
+```
+
+NAT がある場合も、Hayari から実際に見える Caddy の接続元 IP を指定してください。
+Hayari のリスナーへは運用に必要なプライベートネットワークからだけ接続できるようにします。
+systemd では Hayari の `[Service]` に `Environment="HAYARI_TRUSTED_PROXIES=10.0.0.10"`
+（同一 LXC なら loopback の一覧）を設定し、unit を再読み込みして Hayari を再起動します。
+設定は起動時に読み込まれます。上の構成では Caddy 側で XFF を独自設定する必要はありません。
 
 ### Google Reader ログイン
 

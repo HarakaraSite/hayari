@@ -101,7 +101,7 @@ func (s *Server) handleWebLogin(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		http.ServeFileFS(w, r, assets.FS, "login.html")
 	case http.MethodPost:
-		ip := clientIP(r)
+		ip := s.clientIP(r)
 		if !s.logins.allowed(ip, time.Now()) {
 			http.Error(w, "too many login attempts", http.StatusTooManyRequests)
 			return

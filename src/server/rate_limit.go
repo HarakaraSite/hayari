@@ -1,8 +1,11 @@
 package server
 
 import (
+	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
+	"strings"
 	"sync"
 	"time"
 )
@@ -37,12 +40,45 @@ func newLoginRateLimiter(max int, duration time.Duration) *loginRateLimiter {
 	}
 }
 
-func clientIP(r *http.Request) string {
+func parseTrustedProxies(value string) (map[netip.Addr]struct{}, error) {
+	if value == "" {
+		return nil, nil
+	}
+	proxies := make(map[netip.Addr]struct{})
+	for _, entry := range strings.Split(value, ",") {
+		ip, err := netip.ParseAddr(strings.TrimSpace(entry))
+		if err != nil || ip.Zone() != "" {
+			return nil, fmt.Errorf("HAYARI_TRUSTED_PROXIES: invalid IP literal %q", entry)
+		}
+		proxies[ip.Unmap()] = struct{}{}
+	}
+	return proxies, nil
+}
+
+func (s *Server) clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err == nil {
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	peer, err := netip.ParseAddr(host)
+	if err != nil {
 		return host
 	}
-	return r.RemoteAddr
+	peer = peer.Unmap()
+	// TCP peers may include an IPv6 interface zone; the configuration names IPs.
+	if _, trusted := s.trustedProxies[peer.WithZone("")]; trusted {
+		// Caddy sets XFF to its client's IP, or appends that IP to an
+		// existing chain. Only use the rightmost value, never a supplied prefix.
+		values := r.Header.Values("X-Forwarded-For")
+		if len(values) > 0 {
+			last := values[len(values)-1]
+			last = strings.TrimSpace(last[strings.LastIndex(last, ",")+1:])
+			if ip, err := netip.ParseAddr(last); err == nil && ip.Zone() == "" {
+				return ip.Unmap().String()
+			}
+		}
+	}
+	return peer.String()
 }
 
 func (l *loginRateLimiter) allowed(ip string, now time.Time) bool {

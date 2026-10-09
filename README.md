@@ -98,12 +98,67 @@ Hayari does not provide TLS itself. Run it only behind a TLS-terminating reverse
 Browser / RSS client -- HTTPS --> reverse proxy -- HTTP --> Hayari (127.0.0.1:7070)
 ```
 
-- Bind Hayari to `127.0.0.1`; do not expose its HTTP listener directly to the internet.
+- Bind Hayari to loopback when the proxy is on the same host, or to its private interface when the proxy is in another LXC; do not expose its HTTP listener directly to the internet.
 - Configure the reverse proxy to redirect HTTP to HTTPS.
 - Always configure `--user` and `--pass` in production. Without both, Hayari permits requests without authentication for local development.
 - Hayari refuses an unauthenticated listener outside loopback by default. `--allow-insecure-no-auth` overrides this only for intentional local/testing use.
 - Treat the proxy access log as sensitive because it includes requested URLs.
 - When the proxy terminates HTTPS, start Hayari with `--secure-cookie` so browser session cookies are sent only over HTTPS.
+
+### Login failure limits behind Caddy
+
+Set `HAYARI_TRUSTED_PROXIES` in Hayari's environment to the IP addresses from
+which Caddy connects to Hayari. It accepts comma-separated IPv4/IPv6 literals
+(for example, `127.0.0.1,::1`), with optional surrounding whitespace. Hostnames,
+CIDR ranges, ports, and empty entries are invalid and cause a startup error.
+Unset or empty means forwarded headers are ignored.
+
+Only when the actual TCP peer matches a configured address does Hayari use the
+rightmost IP in `X-Forwarded-For`, which [Caddy sets or appends by default](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#defaults).
+Hayari does not trust an arbitrary first value. If XFF is absent or its last
+value is not an IP literal, Hayari uses the TCP peer IP.
+
+Web `/login`, `/accounts/ClientLogin`, and
+`/api/greader.php/accounts/ClientLogin` share the same client-IP failure counter:
+five failed logins lock that IP for 15 minutes. With the proxy configured,
+another client behind the same Caddy can still log in; its successful login
+does not clear the locked client's failures.
+
+When Caddy and Hayari are in the **same LXC**:
+
+```sh
+HAYARI_TRUSTED_PROXIES=127.0.0.1,::1 ./hayari \
+  --addr 127.0.0.1:7070 --user your-user --pass your-password --secure-cookie
+```
+
+```caddyfile
+hayari.example.com {
+    reverse_proxy 127.0.0.1:7070
+}
+```
+
+For IPv6 loopback, use `--addr '[::1]:7070'` and `reverse_proxy [::1]:7070`.
+
+When Caddy and Hayari are in **separate LXCs**, for example Caddy at
+`10.0.0.10` and Hayari at `10.0.0.11`:
+
+```sh
+HAYARI_TRUSTED_PROXIES=10.0.0.10 ./hayari \
+  --addr 10.0.0.11:7070 --user your-user --pass your-password --secure-cookie
+```
+
+```caddyfile
+hayari.example.com {
+    reverse_proxy 10.0.0.11:7070
+}
+```
+
+Use the Caddy source IP actually seen by Hayari, including any NAT translation.
+Keep the Hayari listener reachable only over the intended private network.
+For systemd, put `Environment="HAYARI_TRUSTED_PROXIES=10.0.0.10"` (or the
+loopback list) in Hayari's `[Service]` configuration, then reload the unit and
+restart Hayari. The setting is read at startup; no custom Caddy XFF header
+configuration is needed for these examples.
 
 ### Google Reader login
 
