@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"net/netip"
 )
 
 func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -20,11 +21,16 @@ func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			}
 		}
 
-		// Check HTTP Basic Auth (for API clients / scripts)
-		user, pass, ok := r.BasicAuth()
-		if ok && credentialsMatch(user, pass, s.Username, s.Password) {
-			next(w, r)
-			return
+		// Basic Auth is for local API clients / scripts. Resolve the client IP
+		// through configured proxies so loopback Caddy peers do not admit remote clients.
+		ip, err := netip.ParseAddr(s.clientIP(r))
+		localBasic := err == nil && ip.IsLoopback()
+		if localBasic {
+			user, pass, ok := r.BasicAuth()
+			if ok && credentialsMatch(user, pass, s.Username, s.Password) {
+				next(w, r)
+				return
+			}
 		}
 
 		// The Web UI entry point always uses the form login. Do not infer a
@@ -35,7 +41,9 @@ func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		w.Header().Set("WWW-Authenticate", `Basic realm="hayari"`)
+		if localBasic {
+			w.Header().Set("WWW-Authenticate", `Basic realm="hayari"`)
+		}
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 	}
 }

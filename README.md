@@ -160,6 +160,36 @@ loopback list) in Hayari's `[Service]` configuration, then reload the unit and
 restart Hayari. The setting is read at startup; no custom Caddy XFF header
 configuration is needed for these examples.
 
+### Basic authentication for local automation
+
+The Web UI's REST API uses the cookie issued by Web login. AI agents and scripts
+can also use Basic authentication from a loopback client IP only
+(`127.0.0.0/8` for IPv4 or `::1` for IPv6). Basic authentication from other
+client IPs, including private LAN addresses, is rejected.
+
+```sh
+curl --user your-user:your-password http://127.0.0.1:7070/api/status
+```
+
+The client IP is resolved in the same way as the login failure limit.
+**Always configure `HAYARI_TRUSTED_PROXIES` as shown above when using Caddy.**
+Without it, Caddy in the same LXC makes external requests appear to come from
+loopback, so Basic authentication cannot be restricted to local clients.
+If Hayari listens on loopback, the direct command above still works when Caddy
+is configured as a trusted proxy.
+
+When Hayari listens only on its private IPv4 address, as in the separate-LXC
+example, run this command **inside Hayari's LXC**, using its listening address
+and selecting loopback as the source:
+
+```sh
+curl --interface 127.0.0.1 --user your-user:your-password http://10.0.0.11:7070/api/status
+```
+
+External RSS clients use `ClientLogin` and token authentication through the
+GReader-compatible API. Remote scripts that need the Web UI's REST API must use
+a cookie obtained from `/login`.
+
 ### Google Reader login
 
 `POST /accounts/ClientLogin` is the default and supported login method. Credentials in a GET query can be recorded in proxy access logs, so GET is disabled by default.

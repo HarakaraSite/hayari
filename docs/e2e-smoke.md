@@ -1,8 +1,12 @@
 # hayari 基本 E2E smoke ケース
 
-最終更新: 2026-07-10
+最終更新: 2026-10-09
 
 外部フィード、TLS 証明書、デスクトップクライアントに依存しないローカル smoke ケース。各実行は一時ディレクトリと一時 DB を使い、既存データを変更しない。
+
+Basic 認証は loopback のクライアント IP だけで使えるため、この手順は Hayari の
+`127.0.0.1` リスナーへ直接接続します。Caddy 経由の外部アクセスでは Cookie または
+GReader トークンを使い、`HAYARI_TRUSTED_PROXIES` を設定してください。
 
 ## 前提
 
@@ -50,7 +54,7 @@ curl --silent --fail "$BASE_URL/healthz" | grep -q '"ok":true'
 # 1. 認証なしの REST API は拒否される。
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' "$BASE_URL/api/status")" = 401
 
-# 2. Basic 認証で status を取得できる。
+# 2. ローカルの Basic 認証で status を取得できる。
 curl --silent --fail --user "$USER_NAME:$PASSWORD" "$BASE_URL/api/status" \
   | grep -q '"version":"dev"'
 
@@ -80,7 +84,7 @@ curl --silent --fail \
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
   "$BASE_URL/accounts/ClientLogin?Email=$USER_NAME&Passwd=$PASSWORD")" = 405
 
-# 6. 認証済み REST API でフォルダを作成・取得できる。
+# 6. ローカルの Basic 認証でフォルダを作成・取得できる。
 curl --silent --fail --user "$USER_NAME:$PASSWORD" \
   --header 'Content-Type: application/json' \
   --data '{"title":"E2E folder"}' \

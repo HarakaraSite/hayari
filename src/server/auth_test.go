@@ -150,3 +150,97 @@ func TestAuthMiddlewareRejectsCookieForDifferentUser(t *testing.T) {
 		t.Fatalf("status = %d, want 401", resp.Code)
 	}
 }
+
+func TestBasicAuthOnlyAllowsLoopbackClients(t *testing.T) {
+	for _, tc := range []struct {
+		name, peer, xff, proxies string
+		want                     int
+	}{
+		{"local IPv4", "127.0.0.1:1234", "", "", http.StatusOK},
+		{"local IPv6", "[::1]:1234", "", "", http.StatusOK},
+		{"mapped local IPv4", "[::ffff:127.0.0.1]:1234", "", "", http.StatusOK},
+		{"LAN client", "10.0.0.20:1234", "", "", http.StatusUnauthorized},
+		{"public client", "198.51.100.1:1234", "", "", http.StatusUnauthorized},
+		{"untrusted XFF", "198.51.100.1:1234", "127.0.0.1", "", http.StatusUnauthorized},
+		{"same LXC Caddy", "127.0.0.1:1234", "127.0.0.1, 198.51.100.1", "127.0.0.1", http.StatusUnauthorized},
+		{"IPv6 Caddy", "[::1]:1234", "2001:db8::1", "::1", http.StatusUnauthorized},
+		{"separate LXC Caddy", "10.0.0.10:1234", "198.51.100.1", "10.0.0.10", http.StatusUnauthorized},
+		{"local direct with proxy configured", "127.0.0.1:1234", "", "127.0.0.1", http.StatusOK},
+		{"local through Caddy", "127.0.0.1:1234", "127.0.0.1", "127.0.0.1", http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _ := newTestServer(t)
+			s.Username, s.Password = "user", "pass"
+			proxies, err := parseTrustedProxies(tc.proxies)
+			if err != nil {
+				t.Fatal(err)
+			}
+			s.trustedProxies = proxies
+			handler := s.buildMux()
+			request := func(password string) *httptest.ResponseRecorder {
+				r := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+				r.RemoteAddr = tc.peer
+				if tc.xff != "" {
+					r.Header.Set("X-Forwarded-For", tc.xff)
+				}
+				r.SetBasicAuth("user", password)
+				resp := httptest.NewRecorder()
+				handler.ServeHTTP(resp, r)
+				return resp
+			}
+			resp := request("pass")
+			if resp.Code != tc.want {
+				t.Fatalf("correct Basic credentials = %d, want %d", resp.Code, tc.want)
+			}
+			resp = request("wrong")
+			if resp.Code != http.StatusUnauthorized {
+				t.Fatalf("wrong Basic credentials = %d, want 401", resp.Code)
+			}
+			if challenged := resp.Header().Get("WWW-Authenticate") != ""; challenged != (tc.want == http.StatusOK) {
+				t.Fatalf("Basic challenge = %t, want local clients only", challenged)
+			}
+		})
+	}
+}
+
+func TestRemoteCookieAndGReaderAuthWithLocalOnlyBasic(t *testing.T) {
+	for _, peer := range []string{"127.0.0.1:1234", "[::1]:1234", "10.0.0.10:1234"} {
+		t.Run(peer, func(t *testing.T) {
+			s, _ := newTestServer(t)
+			s.Username, s.Password, s.authKey = "user", "pass", testKey(t)
+			proxies, err := parseTrustedProxies("127.0.0.1,::1,10.0.0.10")
+			if err != nil {
+				t.Fatal(err)
+			}
+			s.trustedProxies = proxies
+			handler := s.buildMux()
+			const client = "198.51.100.1"
+			for _, path := range loginPaths {
+				resp := loginRequest(t, handler, path, peer, client, "pass")
+				want := http.StatusOK
+				if path == "/login" {
+					want = http.StatusSeeOther
+				}
+				if resp.Code != want {
+					t.Fatalf("login at %s = %d, want %d", path, resp.Code, want)
+				}
+				assertLoginCredential(t, s, path, resp)
+				if path == "/login" {
+					r := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+					r.RemoteAddr = peer
+					r.Header.Set("X-Forwarded-For", client)
+					// Valid cookies still work even when a client also sends Basic.
+					r.SetBasicAuth("user", "pass")
+					for _, cookie := range resp.Result().Cookies() {
+						r.AddCookie(cookie)
+					}
+					check := httptest.NewRecorder()
+					handler.ServeHTTP(check, r)
+					if check.Code != http.StatusOK {
+						t.Fatalf("remote session API = %d, want 200", check.Code)
+					}
+				}
+			}
+		})
+	}
+}

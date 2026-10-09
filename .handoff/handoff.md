@@ -3,6 +3,7 @@
 ## Records
 
 ### 方針
+- POL-20261009-basic-loopback: Basic 認証は、信頼済みプロキシを考慮したクライアント IP が loopback の場合だけ許可し、ローカル AI／スクリプト操作のため残す。Web UI 用の通常 API は維持し、外部アクセスは Cookie 認証、RSS クライアントは GReader トークン認証を使う。Caddy 経由では `HAYARI_TRUSTED_PROXIES` を必ず設定する。監査で挙がった購読先の悪意／侵害を前提とする解析負荷の問題は、利用者判断により参考情報とし、今回の修正対象から外す。
 - POL-20260728-client-ui-scope: Reeder は対応・実機検証の対象外とする。フィードエラー表示と汎用フィルター管理は既存 API/バックエンドの現状で確定し、追加 Web UI は実装しない。Web UI の記事タイトル検索は現仕様（FTS5 trigram）で確定済み。
 - POL-20260728-item-image-scope: RSS enclosure 等に由来する `item.image` は Web UI に表示しない。記事本文に含まれる画像の既存表示は維持する。
 - POL-20260728-favicon-storage: `feeds.icon` は TEXT data URL を正式な保存形式とする。取得・ETag キャッシュ付き配信の現実装を維持し、BLOB へ移行しない。
@@ -28,6 +29,17 @@
 - なし
 
 ## Checkpoints
+
+## 2026-10-09 Basic 認証のローカル制限
+
+- 実行エージェント: Codex
+- 対象: `82f0f2378d259ea5e06b9d1b6a353ae1fc237213` から `fix/local-only-basic-auth` を作成。repository 内に `AGENTS.md` はなく、利用者提示の共通指示と既存 CI 定義を参照した。
+- 実施: `authMiddleware` は共通 `clientIP` で解決した IP が loopback の場合だけ Basic 資格情報を照合し、Basic challenge もローカルだけに返す。有効な Cookie は従来どおり先に受理し、通常 API と GReader／別名経路は維持。英日 README と E2E smoke 文書を更新した。
+- 検証: 新規ハンドラテストで修正前は外部／LAN／同一・別 LXC のプロキシ経由の正しい Basic が200になり、想定401との差で失敗することを確認。修正後はローカル IPv4／IPv6／mapped IPv4 と設定済みプロキシの共通 IP 判定、外部 Basic の拒否、Cookie と両 GReader 経路の成功、既存のログイン失敗制限テストを成功確認。現在のソースを一時コピーして `go test ./...`・`go vet ./...`・`go build -o <temporary>/hayari ./cmd/hayari` が成功し、`git diff --check` も成功した。
+- 実バイナリ: loopback と VM 自身の private IPv4 にそれぞれ待ち受け、一時 DB・テスト資格情報でローカル Basic の API 読み書き、public XFF を設定した信頼済み loopback プロキシ扱いの Basic 401、Web Cookie／両 GReader の成功、SIGTERM 終了を確認。private IPv4 待受では、同じ Hayari ホストから `curl --interface 127.0.0.1` で loopback 送信元を選べば Basic が成功し、通常の private 送信元では401になることも確認した。
+- レビュー: 新規 agent は thread 上限で起動不可。既存 reviewer にコード・テスト・文書の read-only レビューを依頼し、別 LXC 待受への loopback URL の例が使えないという具体的な文書指摘を修正。文書再レビューで解消を確認し、コードに具体的な回避・回帰の指摘はなかった。
+- 本番反映: 同一 LXC は `HAYARI_TRUSTED_PROXIES=127.0.0.1,::1`、別 LXC は実際に見える Caddy の接続元 IP を設定して Hayari を再起動する。未設定の loopback Caddy は外部アクセスもローカルに見えるので、この制限の前提を満たさない。ローカル操作の接続例は README を参照。
+- 状態: ローカル修正・検証済み。利用者からコミット・リリースの明示指示を受け、`v1.2.7` の公開準備を開始。タグ作成前に `browser-e2e` を実行して成功した。race は既に確認済みの CGO 無効・gcc 不在と並行処理変更なしのため参考検査を省略する。実 Caddy／本番 LXC への反映は対象外。
 
 ## 2026-10-09
 

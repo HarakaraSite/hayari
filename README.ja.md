@@ -144,6 +144,33 @@ systemd では Hayari の `[Service]` に `Environment="HAYARI_TRUSTED_PROXIES=1
 （同一 LXC なら loopback の一覧）を設定し、unit を再読み込みして Hayari を再起動します。
 設定は起動時に読み込まれます。上の構成では Caddy 側で XFF を独自設定する必要はありません。
 
+### ローカル操作用の Basic 認証
+
+Web UI 用の通常 API は、Web ログインで発行する Cookie で認証します。
+AI やスクリプトによるローカル操作には、loopback のクライアント IP
+（IPv4 の `127.0.0.0/8`、IPv6 の `::1`）からだけ Basic 認証を使えます。
+LAN 内のプライベート IP を含め、それ以外のクライアントからの Basic 認証は拒否します。
+
+```sh
+curl --user your-user:your-password http://127.0.0.1:7070/api/status
+```
+
+クライアント IP はログイン失敗制限と同じ方法で判定します。
+**Caddy 経由では、上記の `HAYARI_TRUSTED_PROXIES` を必ず設定してください。**
+同一 LXC で未設定のままだと、外部からのアクセスも Caddy の loopback IP に見えるため、
+Basic 認証をローカルだけに制限できません。Hayari が loopback で待ち受ける場合は、
+Caddy を信頼する設定後も上の直接接続コマンドを使えます。
+
+別 LXC の例のように Hayari がプライベート IPv4 だけで待ち受ける場合は、
+**Hayari 側の LXC 内**で、接続先にその IP、送信元に loopback を指定します。
+
+```sh
+curl --interface 127.0.0.1 --user your-user:your-password http://10.0.0.11:7070/api/status
+```
+
+外部の RSS クライアントは GReader 互換 API の `ClientLogin` とトークン認証を使います。
+通常 API を外部のスクリプトから使う場合は、`/login` で取得した Cookie を使ってください。
+
 ### Google Reader ログイン
 
 既定でサポートするログイン方法は `POST /accounts/ClientLogin` です。GET の
