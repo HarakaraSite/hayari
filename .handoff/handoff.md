@@ -30,6 +30,15 @@
 
 ## Checkpoints
 
+## 2026-10-09 v1.2.7 リリース
+
+- 実行エージェント: Codex
+- 実施: Caddy 経由の IP 判定修正 `82f0f23` と、Basic 認証を loopback クライアントに限定する修正 `492bf5181f798ea7a08a1520ac93aa1684d91150` を main へ fast-forward。利用者のコミット・リリース指示に従い、注釈付き `v1.2.7` を後者へ作成し、main とタグを atomic push した。
+- CI: Forgejo Actions run 21（API run ID 178、`release.yml`／`build-and-release`）が、タグ `v1.2.7` と対象コミットの一致で成功。test・vet・CGO 無効の Darwin／Linux／Windows amd64／arm64 ビルド、`SHA256SUMS`、Release 添付を完了した。
+- 公開物: Release の6バイナリと `SHA256SUMS` を取得し、全6ファイルのサイズ・SHA-256を検証。公開 linux/amd64 版の `--version` と `/api/status` が `v1.2.7` であることを確認。一時 DB とダミー資格情報で、loopback／private IPv4 待受の local Basic API 読み書き、trusted loopback peer＋public XFF の Basic401、Cookie と両 GReader 経路の成功、SIGTERM 終了も確認した。
+- リリースノート: proxy の IP 明示設定、Basic のローカル制限、同一／別 LXC の設定例、DB スキーマ変更なしを記載した。公開先: https://forge.harakara.site/littleisland/hayari/releases/tag/v1.2.7
+- 運用: 本番配置・再起動は未実施。Caddy 経由で更新する際は `HAYARI_TRUSTED_PROXIES` を必ず設定する。同一 LXC は `127.0.0.1,::1`、別 LXC は Hayari に見える Caddy の送信元 IP。実 Caddy／実クライアントの確認は本番設定に依存する。タグは公開済みの修正コミットに固定し、この公開記録は別 docs commit とする。
+
 ## 2026-10-09 Basic 認証のローカル制限
 
 - 実行エージェント: Codex
