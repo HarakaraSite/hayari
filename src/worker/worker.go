@@ -104,9 +104,19 @@ func (w *Worker) loop() {
 }
 
 func (w *Worker) RefreshAll() {
-	if !w.running.CompareAndSwap(false, true) {
-		return
+	if w.running.CompareAndSwap(false, true) {
+		w.refreshAll()
 	}
+}
+
+// RefreshAllAsync publishes the running state before returning to the caller.
+func (w *Worker) RefreshAllAsync() {
+	if w.running.CompareAndSwap(false, true) {
+		go w.refreshAll()
+	}
+}
+
+func (w *Worker) refreshAll() {
 	defer w.running.Store(false)
 
 	feeds, err := w.db.ListFeeds()

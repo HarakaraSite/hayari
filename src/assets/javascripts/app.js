@@ -14,8 +14,7 @@ const App = (() => {
     sourceId:    null,
     search:      '',
     items:       [],
-    total:       0,
-    offset:      0,
+    nextCursor:  null,
     loading:     false,
     selectedItem: null,
     readabilityMode: false,
@@ -381,36 +380,39 @@ const App = (() => {
 
   // ── Item list ──────────────────────────────────────────────────
   async function loadItems(reset = true) {
-    if (state.loading) return;
-    state.loading = true;
+    if (!reset && (state.loading || !state.nextCursor)) return;
 
     if (reset) {
       state.items  = [];
-      state.offset = 0;
+      state.nextCursor = null;
       itemList.innerHTML = '';
       itemList.appendChild(loadMoreSentinel);
       itemListEmpty.hidden = true;
     }
 
+    // A reset replaces the array so a response for the old view can be ignored.
+    const items = state.items;
+    state.loading = true;
     const params = buildItemParams();
     params.limit  = PAGE_SIZE;
-    params.offset = state.offset;
+    params.cursor = state.nextCursor;
 
     try {
       const data     = await API.getItems(params);
+      if (items !== state.items) return;
       const newItems = (data && data.items) || [];
-      state.total    = (data && data.total) || 0;
-      state.items    = [...state.items, ...newItems];
-      state.offset  += newItems.length;
+      state.nextCursor = data?.next_cursor || null;
+      items.push(...newItems);
       renderItems(newItems);
       itemListEmpty.textContent = 'No items';
-      itemListEmpty.hidden = state.items.length > 0;
+      itemListEmpty.hidden = items.length > 0;
     } catch (err) {
+      if (items !== state.items) return;
       console.error('loadItems:', err);
       itemListEmpty.textContent = 'Failed to load items';
       itemListEmpty.hidden = false;
     } finally {
-      state.loading = false;
+      if (items === state.items) state.loading = false;
     }
   }
 
@@ -507,8 +509,9 @@ const App = (() => {
     const newIdx = Math.max(0, Math.min(items.length - 1, idx + dir));
 
     // Auto-load more if near end
-    if (newIdx >= items.length - 5 && items.length < state.total) {
+    if (newIdx >= items.length - 5 && state.nextCursor) {
       await loadItems(false);
+      if (items !== state.items) return;
     }
 
     if (newIdx !== idx || idx === -1) {
@@ -1028,7 +1031,14 @@ const App = (() => {
       btnRefresh.disabled = true;
       try {
         await API.refreshFeeds();
-        await Promise.all([loadSidebar(), loadItems(true)]);
+        let status = await API.getStatus();
+        while (status?.running) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          status = await API.getStatus();
+        }
+        if (!status) return;
+        await loadSidebar();
+        await loadItems(true);
       } catch (err) {
         alert('Refresh failed: ' + err.message);
       } finally {
@@ -1208,7 +1218,7 @@ const App = (() => {
   // ── Infinite scroll ────────────────────────────────────────────
   function setupInfiniteScroll() {
     const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting && !state.loading && state.items.length < state.total) {
+      if (entries[0].isIntersecting) {
         loadItems(false);
       }
     }, { root: itemList, rootMargin: '0px 0px 200px 0px', threshold: 0.1 });

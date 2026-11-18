@@ -37,6 +37,7 @@ const API = (() => {
   const getFeedErrors = ()          => request('GET',    '/api/feeds/errors');
   const startTitleTranslations = (id) => request('POST', `/api/feeds/${id}/title-translations`);
   const getCapabilities = () => request('GET', '/api/capabilities');
+  const getStatus = () => request('GET', '/api/status');
 
   // Items
   const getItems = (params) => {
@@ -77,7 +78,7 @@ const API = (() => {
 
   return {
     getFolders, createFolder, updateFolder, deleteFolder,
-    getFeeds, createFeed, updateFeed, deleteFeed, findFeeds, refreshFeeds, getFeedErrors, startTitleTranslations, getCapabilities,
+    getFeeds, createFeed, updateFeed, deleteFeed, findFeeds, refreshFeeds, getFeedErrors, startTitleTranslations, getCapabilities, getStatus,
     getItems, updateItem, markAllRead,
     getStats,
     getSettings, saveSettings,

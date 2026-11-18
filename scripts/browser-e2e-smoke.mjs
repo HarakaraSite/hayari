@@ -152,6 +152,7 @@ async function main() {
     const badResponses = [];
     const assetStatus = new Map();
     const apiCalls = [];
+    let refreshRunning = false;
     page.on('console', (msg) => {
       if (msg.type() === 'error') errors.push(msg.text());
     });
@@ -174,7 +175,7 @@ async function main() {
       });
       const noContent = () => route.fulfill({ status: 204, body: '' });
 
-      if (path === '/api/status') return ok({ running: true, version: 'e2e' });
+      if (path === '/api/status') return ok({ running: refreshRunning, version: 'e2e' });
       if (path === '/api/capabilities') return ok({ title_translation: false });
       if (path === '/api/settings') {
         return req.method() === 'PUT'
@@ -183,7 +184,19 @@ async function main() {
       }
       if (path === '/api/folders') return ok(FOLDERS);
       if (path === '/api/feeds') return ok(FEEDS);
-      if (path === '/api/stats') return ok({ unread: { 1: 23, 2: 1 }, starred: { 1: 1 } });
+      if (path === '/api/feeds/refresh' && req.method() === 'POST') {
+        refreshRunning = true;
+        return route.fulfill({ status: 202, body: '' });
+      }
+      if (path === '/api/stats') {
+        const unread = {};
+        const starred = {};
+        for (const item of allItems) {
+          if (item.status === 'unread') unread[item.feed_id] = (unread[item.feed_id] || 0) + 1;
+          if (item.starred) starred[item.feed_id] = (starred[item.feed_id] || 0) + 1;
+        }
+        return ok({ unread, starred });
+      }
       if (/^\/api\/feeds\/\d+\/icon$/.test(path)) {
         return route.fulfill({ status: 200, contentType: 'image/svg+xml', body: ICON_SVG });
       }
@@ -195,12 +208,20 @@ async function main() {
         if (q.get('status') === 'unread') items = items.filter((it) => it.status === 'unread');
         if (q.get('starred') === 'true') items = items.filter((it) => it.starred);
         if (q.get('search')) items = items.filter((it) => it.title.includes(q.get('search')));
+        const cursor = Number(q.get('cursor') || 0);
         const offset = Number(q.get('offset') || 0);
+        // Fixture IDs increase as dates get older.
+        const remaining = items.filter((it) => it.id > cursor).slice(offset);
         const limit = Number(q.get('limit') || 40);
-        return ok({ items: items.slice(offset, offset + limit), total: items.length });
+        const nextCursor = remaining.length > limit ? String(remaining[limit - 1].id) : undefined;
+        return ok({ items: remaining.slice(0, limit), total: items.length, next_cursor: nextCursor });
       }
       if (path === '/api/items/mark-all') return noContent();
-      if (path.startsWith('/api/items/')) return noContent();
+      if (path.startsWith('/api/items/') && req.method() === 'PUT') {
+        const item = allItems.find((it) => it.id === Number(path.split('/').at(-1)));
+        Object.assign(item, req.postDataJSON());
+        return noContent();
+      }
       return route.fulfill({ status: 404, body: '' });
     });
 
@@ -298,7 +319,32 @@ async function main() {
       'infinite scroll loads the remaining items',
     );
 
-    // 9. No broken assets and no console errors.
+    // 9. Reading an item in the first page does not skip an unread article in the second.
+    for (const item of feed1Items) item.status = 'unread';
+    await page.click('#status-tabs button[data-filter="unread"]');
+    await waitFor(async () => (await page.locator('#item-list .item-entry.unread').count()) === 40, 'first unread page');
+    await page.locator('#item-list .item-entry').first().click();
+    await waitFor(async () => (await page.locator('#item-list .item-entry.unread').count()) === 39, 'first item marked read');
+    await page.evaluate(() => {
+      const list = document.querySelector('#item-list');
+      list.scrollTop = list.scrollHeight;
+    });
+    await waitFor(async () => (await page.locator('#item-list .item-entry.unread').count()) === 44, 'remaining unread articles');
+    assert(await page.locator('#item-list [data-item-id="140"]').count() === 1, 'first article from the second page');
+
+    // 10. The refresh button waits for acquisition before reloading the sidebar and items.
+    const beforeRefresh = apiCalls.length;
+    await page.click('#btn-refresh');
+    await waitFor(() => apiCalls.slice(beforeRefresh).some((c) => c.path === '/api/status'), 'refresh status request');
+    assert(await page.locator('#btn-refresh').isDisabled(), 'refresh stays busy while acquisition is running');
+    assert(!apiCalls.slice(beforeRefresh).some((c) => c.path === '/api/stats'), 'sidebar waits for acquisition');
+    allItems.unshift(makeItem(99, 1));
+    refreshRunning = false;
+    await waitFor(async () => await page.locator('#btn-refresh').isEnabled(), 'refresh completes');
+    assert(await page.locator('[data-feed-id="1"] .sidebar-count-badge').textContent() === '45', 'badge includes the new article');
+    assert(await page.locator('#item-list .item-entry').first().getAttribute('data-item-id') === '99', 'list includes the new article');
+
+    // 11. No broken assets and no console errors.
     for (const asset of ASSETS) {
       assert(assetStatus.get(asset) === 200, `${asset} → ${assetStatus.get(asset)}`);
     }

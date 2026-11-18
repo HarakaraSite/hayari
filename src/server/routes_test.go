@@ -309,6 +309,51 @@ func TestStatusUsesServerVersion(t *testing.T) {
 	}
 }
 
+func TestItemsCursorAfterMarkRead(t *testing.T) {
+	srv, ts := newTestServer(t)
+	feed := seedFeed(t, srv.db, "https://example.com/cursor.xml", "")
+	items := seedItems(t, srv.db, feed.ID, 3)
+
+	getPage := func(path string) (page struct {
+		Items      []storage.Item `json:"items"`
+		Total      int            `json:"total"`
+		NextCursor string         `json:"next_cursor"`
+	}) {
+		t.Helper()
+		resp := doRequest(t, ts, http.MethodGet, path, "")
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s: HTTP %d", path, resp.StatusCode)
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+			t.Fatal(err)
+		}
+		return page
+	}
+
+	path := fmt.Sprintf("/api/items?status=unread&feed_id=%d&limit=2", feed.ID)
+	first := getPage(path)
+	if len(first.Items) != 2 || first.Total != 3 || first.NextCursor == "" {
+		t.Fatalf("first page = %+v", first)
+	}
+	// Reading the last item of page one removes it from the unread query.
+	id := first.Items[1].ID
+	resp := doRequest(t, ts, http.MethodPut, fmt.Sprintf("/api/items/%d", id), `{"status":"read"}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("mark read = HTTP %d", resp.StatusCode)
+	}
+
+	second := getPage(path + "&cursor=" + url.QueryEscape(first.NextCursor))
+	if len(second.Items) != 1 || second.Items[0].ID != items[2].ID || second.Total != 2 || second.NextCursor != "" {
+		t.Fatalf("second page = %+v, want only item %d and total 2", second, items[2].ID)
+	}
+	offset := getPage(path + "&offset=1")
+	if len(offset.Items) != 1 || offset.Items[0].ID != items[2].ID || offset.Total != 2 {
+		t.Fatalf("offset page = %+v, want only item %d and total 2", offset, items[2].ID)
+	}
+}
+
 // --- GET /api/feeds/errors ---
 
 func TestFeedErrorsEmpty(t *testing.T) {

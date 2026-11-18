@@ -16,6 +16,7 @@ type Item struct {
 	TitleTranslationState string    `json:"title_translation_state"`
 	Link                  string    `json:"link"`
 	Date                  time.Time `json:"date"`
+	StoredDate            string    `json:"-"`
 	Content               string    `json:"content"`
 	Author                string    `json:"author"`
 	Status                string    `json:"status"`
@@ -38,7 +39,7 @@ type ItemFilter struct {
 
 // ItemCursor identifies the final item from the previous page.
 type ItemCursor struct {
-	Date time.Time
+	Date string // Date text used by SQLite for ordering.
 	ID   int64
 }
 
@@ -75,13 +76,12 @@ func (f ItemFilter) where() (string, []interface{}) {
 		args = append(args, f.Before.UTC().Format(time.RFC3339Nano))
 	}
 	if f.Cursor != nil {
-		date := f.Cursor.Date.UTC().Format(time.RFC3339Nano)
 		if f.OldestFirst {
 			clauses = append(clauses, "(i.date > ? OR (i.date = ? AND i.id > ?))")
 		} else {
 			clauses = append(clauses, "(i.date < ? OR (i.date = ? AND i.id < ?))")
 		}
-		args = append(args, date, date, f.Cursor.ID)
+		args = append(args, f.Cursor.Date, f.Cursor.Date, f.Cursor.ID)
 	}
 
 	if len(clauses) == 0 {
@@ -91,7 +91,7 @@ func (f ItemFilter) where() (string, []interface{}) {
 }
 
 const itemSelect = `
-	SELECT i.id, i.feed_id, i.guid, i.title, i.translated_title, i.title_translation_state, i.link, i.date, i.content, i.author, i.status, i.starred, i.image, i.hidden
+	SELECT i.id, i.feed_id, i.guid, i.title, i.translated_title, i.title_translation_state, i.link, i.date, CAST(i.date AS TEXT), i.content, i.author, i.status, i.starred, i.image, i.hidden
 	FROM items i
 	JOIN feeds f ON f.id = i.feed_id`
 
@@ -121,7 +121,7 @@ func (s *Storage) ListItems(filter ItemFilter, limit, offset int) ([]Item, error
 	for rows.Next() {
 		var item Item
 		if err := rows.Scan(&item.ID, &item.FeedID, &item.GUID, &item.Title, &item.TranslatedTitle, &item.TitleTranslationState, &item.Link,
-			&item.Date, &item.Content, &item.Author, &item.Status, &item.Starred, &item.Image, &item.Hidden); err != nil {
+			&item.Date, &item.StoredDate, &item.Content, &item.Author, &item.Status, &item.Starred, &item.Image, &item.Hidden); err != nil {
 			return nil, err
 		}
 		items = append(items, item)

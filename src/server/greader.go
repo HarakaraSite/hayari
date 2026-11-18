@@ -2,7 +2,6 @@ package server
 
 import (
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"net/http"
@@ -572,7 +571,8 @@ func (s *Server) serveStreamItems(w http.ResponseWriter, r *http.Request, stream
 		"items": entries,
 	}
 	if len(items) > n {
-		resp["continuation"] = encodeContinuation(items[n-1])
+		last := items[n-1]
+		resp["continuation"] = encodeItemCursor(last.Date.UTC().Format(time.RFC3339Nano), last.ID)
 	}
 	writeJSON(w, resp)
 }
@@ -771,36 +771,21 @@ func (s *Server) applyItemIDContinuation(filter *storage.ItemFilter, value strin
 	if err != nil || item == nil {
 		return fmt.Errorf("invalid continuation")
 	}
-	filter.Cursor = &storage.ItemCursor{Date: item.Date, ID: item.ID}
+	filter.Cursor = &storage.ItemCursor{Date: item.Date.UTC().Format(time.RFC3339Nano), ID: item.ID}
 	return nil
 }
 
-func encodeContinuation(item storage.Item) string {
-	payload := item.Date.UTC().Format(time.RFC3339Nano) + "|" + strconv.FormatInt(item.ID, 10)
-	return base64.RawURLEncoding.EncodeToString([]byte(payload))
-}
-
 func applyContinuation(filter *storage.ItemFilter, value string) error {
-	if value == "" {
-		return nil
+	cursor, err := decodeItemCursor(value)
+	if err != nil || cursor == nil {
+		return err
 	}
-	payload, err := base64.RawURLEncoding.DecodeString(value)
+	date, err := time.Parse(time.RFC3339Nano, cursor.Date)
 	if err != nil {
 		return err
 	}
-	parts := strings.Split(string(payload), "|")
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid continuation")
-	}
-	date, err := time.Parse(time.RFC3339Nano, parts[0])
-	if err != nil {
-		return err
-	}
-	id, err := strconv.ParseInt(parts[1], 10, 64)
-	if err != nil || id < 1 {
-		return fmt.Errorf("invalid continuation")
-	}
-	filter.Cursor = &storage.ItemCursor{Date: date, ID: id}
+	cursor.Date = date.UTC().Format(time.RFC3339Nano)
+	filter.Cursor = cursor
 	return nil
 }
 

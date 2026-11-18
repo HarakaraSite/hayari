@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -100,6 +101,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 var pageClient = safehttp.NewClient(15 * time.Second)
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, map[string]interface{}{
 		"running": s.worker.Running(),
 		"version": s.Version,
@@ -422,7 +424,7 @@ func (s *Server) handleFeedsRefresh(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	go s.worker.RefreshAll()
+	s.worker.RefreshAllAsync()
 	w.WriteHeader(http.StatusAccepted)
 }
 
@@ -453,7 +455,18 @@ func (s *Server) handleItems(w http.ResponseWriter, r *http.Request) {
 			offset = n
 		}
 	}
-	items, err := s.db.ListItems(filter, limit, offset)
+	pageFilter := filter
+	cursor, err := decodeItemCursor(q.Get("cursor"))
+	if err != nil {
+		httpError(w, err, http.StatusBadRequest)
+		return
+	}
+	pageFilter.Cursor = cursor
+	fetchLimit := limit
+	if fetchLimit < math.MaxInt {
+		fetchLimit++
+	}
+	items, err := s.db.ListItems(pageFilter, fetchLimit, offset)
 	if err != nil {
 		httpError(w, err, 500)
 		return
@@ -463,10 +476,14 @@ func (s *Server) handleItems(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err, 500)
 		return
 	}
-	writeJSON(w, map[string]interface{}{
-		"items": items,
-		"total": total,
-	})
+	response := map[string]interface{}{"total": total}
+	if len(items) > limit {
+		items = items[:limit]
+		last := items[limit-1]
+		response["next_cursor"] = encodeItemCursor(last.StoredDate, last.ID)
+	}
+	response["items"] = items
+	writeJSON(w, response)
 }
 
 func (s *Server) handleItem(w http.ResponseWriter, r *http.Request) {
