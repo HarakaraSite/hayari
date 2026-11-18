@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"database/sql"
 	"strings"
 	"time"
 )
@@ -46,6 +47,24 @@ func (s *Storage) ListFeeds() ([]Feed, error) {
 	return feeds, rows.Err()
 }
 
+func (s *Storage) ListFeedIDs() ([]int64, error) {
+	rows, err := s.db.Query(`SELECT id FROM feeds ORDER BY title`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func (s *Storage) GetFeed(id int64) (*Feed, error) {
 	f := &Feed{}
 	err := scanFeed(s.db.QueryRow(`SELECT `+feedColumns+` FROM feeds WHERE id = ?`, id), f)
@@ -66,7 +85,8 @@ func (s *Storage) GetFeedByURL(url string) (*Feed, error) {
 
 func (s *Storage) CreateFeed(feedURL string, folderID *int64) (*Feed, error) {
 	res, err := s.db.Exec(`
-		INSERT INTO feeds (feed_url, folder_id) VALUES (?, ?)
+		INSERT INTO feeds (id, feed_url, folder_id)
+		VALUES ((SELECT last_id + 1 FROM feed_id_sequence), ?, ?)
 		ON CONFLICT(feed_url) DO NOTHING`, feedURL, folderID)
 	if err != nil {
 		return nil, err
@@ -182,14 +202,15 @@ func (s *Storage) UpdateFeedFolder(id int64, folderID *int64) error {
 // UpdateFeedMeta fills in title and site_url from the parsed feed, but only
 // for fields that are currently empty — user-set values are never overwritten.
 func (s *Storage) UpdateFeedMeta(id int64, title, siteURL string) error {
-	_, err := s.db.Exec(`
-		UPDATE feeds SET
-			title    = CASE WHEN title    = '' AND ? != '' THEN ? ELSE title    END,
-			site_url = CASE WHEN site_url = '' AND ? != '' THEN ? ELSE site_url END
-		WHERE id = ?`,
-		title, title, siteURL, siteURL, id)
+	_, err := s.db.Exec(`UPDATE feeds SET `+feedMetadataAssignments+` WHERE id = ?`, title, siteURL, id)
 	return err
 }
+
+const feedMetadataAssignments = `
+	title    = CASE WHEN title    = '' THEN ? ELSE title    END,
+	site_url = CASE WHEN site_url = '' THEN ? ELSE site_url END`
+
+const feedRefreshAssignments = `last_refreshed = ?, last_modified = ?, etag = ?, last_error = NULL`
 
 // UpdateFeedIcon stores the favicon only when none is set yet, so a slow
 // favicon fetch can never clobber a newer value.
@@ -199,11 +220,35 @@ func (s *Storage) UpdateFeedIcon(id int64, icon *string) error {
 }
 
 func (s *Storage) UpdateFeedRefresh(id int64, lastModified, etag *string) error {
-	now := time.Now()
-	_, err := s.db.Exec(`
-		UPDATE feeds SET last_refreshed = ?, last_modified = ?, etag = ?, last_error = NULL WHERE id = ?`,
-		now, lastModified, etag, id)
+	_, err := s.db.Exec(`UPDATE feeds SET `+feedRefreshAssignments+` WHERE id = ?`, time.Now(), lastModified, etag, id)
 	return err
+}
+
+// StoreFeedRefresh commits articles and their search entries together with the
+// HTTP validators, so a failed insert can be retried on the next refresh.
+func (s *Storage) StoreFeedRefresh(feedID int64, title, siteURL string, lastModified, etag *string, items []Item) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	result, err := tx.Exec(`UPDATE feeds SET `+feedMetadataAssignments+`, `+feedRefreshAssignments+` WHERE id = ?`,
+		title, siteURL, time.Now(), lastModified, etag, feedID)
+	if err != nil {
+		return err
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if updated == 0 {
+		return sql.ErrNoRows
+	}
+	if err := insertItems(tx, items); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Storage) UpdateFeedError(id int64, errMsg string) error {

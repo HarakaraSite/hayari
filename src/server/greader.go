@@ -248,7 +248,7 @@ func (s *Server) greaderSubscriptionEdit(w http.ResponseWriter, r *http.Request)
 					return
 				}
 			}
-			go s.worker.RefreshFeed(feed.ID)
+			s.worker.RefreshFeedAsync(feed.ID)
 
 		case "unsubscribe":
 			feed, err := s.streamRefToFeed(streamID)
@@ -320,7 +320,7 @@ func (s *Server) greaderSubscriptionQuickAdd(w http.ResponseWriter, r *http.Requ
 		httpError(w, err, 500)
 		return
 	}
-	go s.worker.RefreshFeed(feed.ID)
+	s.worker.RefreshFeedAsync(feed.ID)
 
 	writeJSON(w, map[string]interface{}{
 		"numResults": 1,
@@ -490,7 +490,7 @@ func (s *Server) greaderStreamItemIDs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	n := greaderPageSize(r, 1000)
-	items, err := s.db.ListItems(filter, n+1, 0)
+	ids, err := s.db.ListItemIDs(filter, n+1, 0)
 	if err != nil {
 		httpError(w, err, 500)
 		return
@@ -499,20 +499,18 @@ func (s *Server) greaderStreamItemIDs(w http.ResponseWriter, r *http.Request) {
 	type itemRef struct {
 		ID string `json:"id"`
 	}
-	refs := make([]itemRef, 0, len(items))
-	for i := range items {
-		if i >= n {
-			break
-		}
+	pageIDs := ids[:min(n, len(ids))]
+	refs := make([]itemRef, 0, len(pageIDs))
+	for _, id := range pageIDs {
 		// FreshRSS returns the database entry ID as a decimal string. Clients
 		// such as NetNewsWire convert it to the tagged hexadecimal form when
 		// they subsequently request the entry contents.
-		refs = append(refs, itemRef{ID: strconv.FormatInt(items[i].ID, 10)})
+		refs = append(refs, itemRef{ID: strconv.FormatInt(id, 10)})
 	}
 
 	resp := map[string]interface{}{"itemRefs": refs}
-	if len(items) > n {
-		resp["continuation"] = strconv.FormatInt(items[n-1].ID, 10)
+	if len(ids) > n {
+		resp["continuation"] = strconv.FormatInt(ids[n-1], 10)
 	}
 	writeJSON(w, resp)
 }
@@ -523,14 +521,23 @@ func (s *Server) greaderStreamItemContents(w http.ResponseWriter, r *http.Reques
 
 	feedMap, folderTitles := s.loadFeedMaps()
 
-	entries := make([]map[string]interface{}, 0, len(rawIDs))
+	ids := make([]int64, 0, len(rawIDs))
 	for _, rawID := range rawIDs {
 		id, err := parseItemID(rawID)
 		if err != nil {
 			continue
 		}
-		item, err := s.db.GetItem(id)
-		if err != nil || item == nil {
+		ids = append(ids, id)
+	}
+	items, batchErr := s.db.GetItemsByIDs(ids)
+	entries := make([]map[string]interface{}, 0, len(ids))
+	for _, id := range ids {
+		item := items[id]
+		if batchErr != nil {
+			// Preserve the reader endpoint's best-effort response on a query error.
+			item, _ = s.db.GetItem(id)
+		}
+		if item == nil {
 			continue
 		}
 		entries = append(entries, itemToGReaderEntry(item, feedMap, folderTitles))

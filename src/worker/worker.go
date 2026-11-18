@@ -1,8 +1,13 @@
 package worker
 
 import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
 	"log"
 	"regexp"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -23,13 +28,31 @@ const (
 type Worker struct {
 	db      *storage.Storage
 	running atomic.Bool
-	stop    chan struct{}
+	ctx     context.Context
+	cancel  context.CancelFunc
+
+	refreshMu sync.Mutex
+	refreshes map[int64]chan struct{}
+	queue     []feedRefresh
+	urgent    int // Number of Web subscription requests at the front of queue.
+	workers   int
 }
 
+type feedRefresh struct {
+	id   int64
+	done chan struct{}
+}
+
+// ErrStopped indicates that the worker shut down while a caller was waiting.
+var ErrStopped = errors.New("feed refresh worker stopped")
+
 func New(db *storage.Storage) *Worker {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Worker{
-		db:   db,
-		stop: make(chan struct{}),
+		db:        db,
+		ctx:       ctx,
+		cancel:    cancel,
+		refreshes: make(map[int64]chan struct{}),
 	}
 }
 
@@ -42,7 +65,14 @@ func (w *Worker) Start() {
 }
 
 func (w *Worker) Stop() {
-	close(w.stop)
+	w.refreshMu.Lock()
+	defer w.refreshMu.Unlock()
+	w.cancel()
+	for _, job := range w.queue {
+		delete(w.refreshes, job.id)
+	}
+	w.queue = nil
+	w.urgent = 0
 }
 
 // refreshInterval reads refresh_rate from settings (minutes).
@@ -97,7 +127,7 @@ func (w *Worker) loop() {
 			if err := w.db.DeleteOldItems(); err != nil {
 				log.Printf("worker: cleanup: %v", err)
 			}
-		case <-w.stop:
+		case <-w.ctx.Done():
 			return
 		}
 	}
@@ -119,61 +149,155 @@ func (w *Worker) RefreshAllAsync() {
 func (w *Worker) refreshAll() {
 	defer w.running.Store(false)
 
-	feeds, err := w.db.ListFeeds()
+	ids, err := w.db.ListFeedIDs()
 	if err != nil {
 		log.Printf("worker: list feeds: %v", err)
 		return
 	}
 
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, concurrentFeeds)
-
-	for _, feed := range feeds {
-		wg.Add(1)
-		go func(f storage.Feed) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			w.refreshFeed(f)
-		}(feed)
+	pending := make([]<-chan struct{}, 0, len(ids))
+	for _, id := range ids {
+		pending = append(pending, w.enqueueRefresh(id, false))
 	}
-	wg.Wait()
+	for _, done := range pending {
+		select {
+		case <-done:
+		case <-w.ctx.Done():
+			return
+		}
+	}
 }
 
 func (w *Worker) RefreshFeed(id int64) {
-	feed, err := w.db.GetFeed(id)
-	if err != nil || feed == nil {
-		return
-	}
-	w.refreshFeed(*feed)
+	_ = w.RefreshFeedContext(context.Background(), id)
 }
 
-func (w *Worker) refreshFeed(feed storage.Feed) {
-	result, err := Fetch(feed.FeedURL, feed.LastModified, feed.ETag)
-	if err != nil {
-		log.Printf("worker: fetch %s: %v", feed.FeedURL, err)
-		w.db.UpdateFeedError(feed.ID, err.Error())
+// RefreshFeedContext prioritizes the initial refresh for a Web subscription.
+// Canceling the wait leaves the shared refresh queued for other callers.
+func (w *Worker) RefreshFeedContext(ctx context.Context, id int64) error {
+	select {
+	case <-w.enqueueRefresh(id, true):
+		if w.ctx.Err() != nil {
+			return ErrStopped
+		}
+		return ctx.Err()
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-w.ctx.Done():
+		return ErrStopped
+	}
+}
+
+// RefreshFeedAsync queues a subscription's initial refresh.
+func (w *Worker) RefreshFeedAsync(id int64) {
+	w.enqueueRefresh(id, false)
+}
+
+func (w *Worker) enqueueRefresh(id int64, urgent bool) <-chan struct{} {
+	w.refreshMu.Lock()
+	defer w.refreshMu.Unlock()
+	select {
+	case <-w.ctx.Done():
+		return nil
+	default:
+	}
+	if done := w.refreshes[id]; done != nil {
+		if urgent {
+			for i := w.urgent; i < len(w.queue); i++ {
+				job := w.queue[i]
+				if job.id != id {
+					continue
+				}
+				copy(w.queue[w.urgent+1:i+1], w.queue[w.urgent:i])
+				w.queue[w.urgent] = job
+				w.urgent++
+				break
+			}
+		}
+		return done
+	}
+	done := make(chan struct{})
+	w.refreshes[id] = done
+	job := feedRefresh{id: id, done: done}
+	if urgent {
+		w.queue = slices.Insert(w.queue, w.urgent, job)
+		w.urgent++
+	} else {
+		w.queue = append(w.queue, job)
+	}
+	if w.workers < concurrentFeeds {
+		w.workers++
+		go w.runRefreshQueue()
+	}
+	return done
+}
+
+func (w *Worker) runRefreshQueue() {
+	for {
+		w.refreshMu.Lock()
+		if len(w.queue) == 0 {
+			w.queue = nil
+			w.workers--
+			w.refreshMu.Unlock()
+			return
+		}
+		job := w.queue[0]
+		w.queue[0] = feedRefresh{}
+		w.queue = w.queue[1:]
+		if w.urgent > 0 {
+			w.urgent--
+		}
+		w.refreshMu.Unlock()
+
+		w.refreshFeed(job.id)
+
+		w.refreshMu.Lock()
+		delete(w.refreshes, job.id)
+		close(job.done)
+		w.refreshMu.Unlock()
+	}
+}
+
+func (w *Worker) refreshFeed(id int64) {
+	if w.ctx.Err() != nil {
 		return
 	}
-	if result.NotModified {
+	feed, err := w.db.GetFeed(id)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			log.Printf("worker: get feed %d: %v", id, err)
+		}
 		return
+	}
+	if err := w.fetchAndStoreFeed(feed); err != nil && !errors.Is(err, sql.ErrNoRows) && w.ctx.Err() == nil {
+		log.Printf("worker: refresh %s: %v", feed.FeedURL, err)
+		if err := w.db.UpdateFeedError(id, err.Error()); err != nil {
+			log.Printf("worker: record refresh error for feed %d: %v", id, err)
+		}
+	}
+}
+
+func (w *Worker) fetchAndStoreFeed(feed *storage.Feed) error {
+	result, err := fetch(w.ctx, feed.FeedURL, feed.LastModified, feed.ETag)
+	if err != nil {
+		return fmt.Errorf("fetch: %w", err)
+	}
+	if result.NotModified {
+		return nil
 	}
 
 	parsed, err := parser.Parse(result.Data)
 	if err != nil {
-		log.Printf("worker: parse %s: %v", feed.FeedURL, err)
-		w.db.UpdateFeedError(feed.ID, err.Error())
-		return
+		return fmt.Errorf("parse: %w", err)
 	}
 
-	// Fill in missing metadata (UpdateFeedMeta never overwrites non-empty fields)
-	needsMeta := (feed.Title == "" && parsed.Title != "") ||
-		(feed.SiteURL == "" && parsed.SiteURL != "")
-	if needsMeta {
-		w.db.UpdateFeedMeta(feed.ID, parsed.Title, parsed.SiteURL)
+	items, err := w.prepareItems(feed.ID, parsed.Items)
+	if err != nil {
+		return err
 	}
-
-	// Mark refresh successful (clears last_error)
+	if err := w.ctx.Err(); err != nil {
+		return err
+	}
 	var lm, etag *string
 	if result.LastModified != "" {
 		lm = &result.LastModified
@@ -181,7 +305,9 @@ func (w *Worker) refreshFeed(feed storage.Feed) {
 	if result.ETag != "" {
 		etag = &result.ETag
 	}
-	w.db.UpdateFeedRefresh(feed.ID, lm, etag)
+	if err := w.db.StoreFeedRefresh(feed.ID, parsed.Title, parsed.SiteURL, lm, etag, items); err != nil {
+		return fmt.Errorf("store feed refresh: %w", err)
+	}
 
 	// Fetch favicon once when not yet stored. Some Atom feeds, including the
 	// Go Blog, only expose a rel="self" feed URL and no site URL. In that case
@@ -190,37 +316,53 @@ func (w *Worker) refreshFeed(feed storage.Feed) {
 	if feed.Icon == nil && siteURL != "" {
 		go w.fetchAndStoreFavicon(feed.ID, siteURL)
 	}
+	return nil
+}
 
-	// Apply filters and collect items
-	filters, _ := w.db.ListFiltersForFeed(feed.ID)
+func (w *Worker) prepareItems(feedID int64, parsed []parser.Item) ([]storage.Item, error) {
+	if len(parsed) == 0 {
+		return nil, nil
+	}
 	maxAgeDays := w.itemMaxAgeDays()
 	oldestAllowed := time.Now().AddDate(0, 0, -maxAgeDays)
-	var items []storage.Item
-	for _, pi := range parsed.Items {
+	items := make([]storage.Item, 0, len(parsed))
+	for _, pi := range parsed {
 		if maxAgeDays > 0 && pi.Date.Before(oldestAllowed) {
 			continue
 		}
 		item := storage.Item{
-			FeedID:  feed.ID,
+			FeedID:  feedID,
 			GUID:    pi.GUID,
 			Title:   pi.Title,
 			Link:    content.Link(pi.Link),
 			Date:    pi.Date,
-			Content: content.HTML(pi.Content),
+			Content: pi.Content,
 			Author:  pi.Author,
 		}
 		if pi.Image != "" {
 			item.Image = &pi.Image
 		}
-		item.Status, item.Hidden = applyFilters(item, filters)
 		items = append(items, item)
 	}
 
-	if len(items) > 0 {
-		if err := w.db.CreateItems(items); err != nil {
-			log.Printf("worker: insert items for %s: %v", feed.FeedURL, err)
-		}
+	items, err := w.db.NewFeedItems(feedID, items)
+	if err != nil {
+		return nil, fmt.Errorf("find new articles: %w", err)
 	}
+	if len(items) == 0 {
+		return nil, nil
+	}
+	filters, err := w.db.ListFiltersForFeed(feedID)
+	if err != nil {
+		return nil, fmt.Errorf("load article filters: %w", err)
+	}
+	compiled := compileFilters(filters)
+	for i := range items {
+		item := &items[i]
+		item.Content = content.HTML(item.Content)
+		item.Status, item.Hidden = applyFilters(*item, compiled)
+	}
+	return items, nil
 }
 
 func faviconSourceURL(parsedSiteURL, storedSiteURL, feedURL string) string {
@@ -239,17 +381,33 @@ func (w *Worker) fetchAndStoreFavicon(feedID int64, siteURL string) {
 		log.Printf("worker: favicon %s: %v", siteURL, err)
 		return
 	}
-	// UpdateFeedIcon only writes when icon IS NULL, so concurrent fetches
-	// cannot clobber each other or any other feed fields.
-	w.db.UpdateFeedIcon(feedID, &dataURL)
+	if err := w.db.UpdateFeedIcon(feedID, &dataURL); err != nil {
+		log.Printf("worker: store favicon for feed %d: %v", feedID, err)
+	}
+}
+
+type compiledFilter struct {
+	pattern *regexp.Regexp
+	field   string
+	action  string
+}
+
+func compileFilters(filters []storage.Filter) []compiledFilter {
+	compiled := make([]compiledFilter, 0, len(filters))
+	for _, filter := range filters {
+		if pattern, err := regexp.Compile(filter.Rule); err == nil {
+			compiled = append(compiled, compiledFilter{pattern: pattern, field: filter.Field, action: filter.Action})
+		}
+	}
+	return compiled
 }
 
 // applyFilters returns the status and hidden state the item should have based
 // on the existing generic filter rules.
-func applyFilters(item storage.Item, filters []storage.Filter) (string, bool) {
+func applyFilters(item storage.Item, filters []compiledFilter) (string, bool) {
 	for _, f := range filters {
 		var field string
-		switch f.Field {
+		switch f.field {
 		case "title":
 			field = item.Title
 		case "content":
@@ -260,12 +418,11 @@ func applyFilters(item storage.Item, filters []storage.Filter) (string, bool) {
 			continue
 		}
 
-		matched, err := regexp.MatchString(f.Rule, field)
-		if err != nil || !matched {
+		if !f.pattern.MatchString(field) {
 			continue
 		}
 
-		switch f.Action {
+		switch f.action {
 		case "mark_read":
 			return "read", false
 		case "hide":

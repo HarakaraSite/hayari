@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -53,6 +54,10 @@ type FetchResult struct {
 }
 
 func Fetch(url string, lastModified, etag *string) (*FetchResult, error) {
+	return fetch(context.Background(), url, lastModified, etag)
+}
+
+func fetch(ctx context.Context, url string, lastModified, etag *string) (*FetchResult, error) {
 	req, err := newGetRequest(url, "application/rss+xml, application/atom+xml, application/json, text/xml, */*")
 	if err != nil {
 		return nil, err
@@ -65,7 +70,7 @@ func Fetch(url string, lastModified, etag *string) (*FetchResult, error) {
 		req.Header.Set("If-None-Match", *etag)
 	}
 
-	resp, err := httpClient.Do(req)
+	resp, err := httpClient.Do(req.WithContext(ctx))
 	if err != nil {
 		return nil, err
 	}

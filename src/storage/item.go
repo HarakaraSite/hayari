@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -110,20 +111,10 @@ func (f ItemFilter) where() (string, []interface{}) {
 	return "WHERE " + strings.Join(clauses, " AND "), args
 }
 
-const itemSelect = `
-	SELECT i.id, i.feed_id, i.guid, i.title, i.translated_title, i.title_translation_state, i.link, i.date, CAST(i.date AS TEXT), i.content, i.author, i.status, i.starred, i.image, i.hidden
-	FROM items i
-	JOIN feeds f ON f.id = i.feed_id`
-
-func (s *Storage) buildItemQuery(filter ItemFilter, suffix string) (string, []interface{}) {
+func itemListQuery(columns string, filter ItemFilter, limit, offset int) (string, []interface{}) {
 	where, args := filter.where()
 	where, args, ftsJoin := applySearchFilter(where, args, filter.Search)
 
-	query := fmt.Sprintf("%s\n%s\n%s\n%s", itemSelect, ftsJoin, where, suffix)
-	return query, args
-}
-
-func (s *Storage) ListItems(filter ItemFilter, limit, offset int) ([]Item, error) {
 	order := "DESC"
 	if filter.OldestFirst {
 		order = "ASC"
@@ -132,8 +123,21 @@ func (s *Storage) ListItems(filter ItemFilter, limit, offset int) ([]Item, error
 	if !filter.OrderByID {
 		sort = "i.date " + order + ", " + sort
 	}
-	query, args := s.buildItemQuery(filter, "ORDER BY "+sort+"\nLIMIT ? OFFSET ?")
-	args = append(args, limit, offset)
+	// #nosec G201 -- columns, ftsJoin, where and sort contain only fixed SQL fragments.
+	query := fmt.Sprintf(`
+		SELECT %s
+		FROM items i
+		JOIN feeds f ON f.id = i.feed_id
+		%s
+		%s
+		ORDER BY %s
+		LIMIT ? OFFSET ?`, columns, ftsJoin, where, sort)
+	return query, append(args, limit, offset)
+}
+
+func (s *Storage) ListItems(filter ItemFilter, limit, offset int) ([]Item, error) {
+	const columns = `i.id, i.feed_id, i.guid, i.title, i.translated_title, i.title_translation_state, i.link, i.date, CAST(i.date AS TEXT), i.content, i.author, i.status, i.starred, i.image, i.hidden`
+	query, args := itemListQuery(columns, filter, limit, offset)
 
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
@@ -170,17 +174,80 @@ func (s *Storage) CountItems(filter ItemFilter) (int64, error) {
 	return count, err
 }
 
+const itemDetailColumns = `id, feed_id, guid, title, translated_title, title_translation_state, link, date, content, author, status, starred, image, hidden`
+
+func scanItemDetail(row interface{ Scan(...any) error }, item *Item) error {
+	return row.Scan(&item.ID, &item.FeedID, &item.GUID, &item.Title, &item.TranslatedTitle, &item.TitleTranslationState, &item.Link,
+		&item.Date, &item.Content, &item.Author, &item.Status, &item.Starred, &item.Image, &item.Hidden)
+}
+
 func (s *Storage) GetItem(id int64) (*Item, error) {
 	item := &Item{}
-	err := s.db.QueryRow(`
-		SELECT id, feed_id, guid, title, translated_title, title_translation_state, link, date, content, author, status, starred, image, hidden
-		FROM items WHERE id = ? AND hidden = 0`, id).
-		Scan(&item.ID, &item.FeedID, &item.GUID, &item.Title, &item.TranslatedTitle, &item.TitleTranslationState, &item.Link,
-			&item.Date, &item.Content, &item.Author, &item.Status, &item.Starred, &item.Image, &item.Hidden)
-	if err != nil {
+	row := s.db.QueryRow(`SELECT `+itemDetailColumns+` FROM items WHERE id = ? AND hidden = 0`, id)
+	if err := scanItemDetail(row, item); err != nil {
 		return nil, err
 	}
 	return item, nil
+}
+
+// NewFeedItems filters candidates in place, preserving the first accepted
+// occurrence of each GUID or nonempty link. Inserts still check for duplicates.
+func (s *Storage) NewFeedItems(feedID int64, items []Item) ([]Item, error) {
+	const batchSize = 300
+	existing := make([]bool, len(items))
+	for start := 0; start < len(items); start += batchSize {
+		end := min(start+batchSize, len(items))
+		if err := s.findExistingFeedItems(feedID, items[start:end], existing[start:end]); err != nil {
+			return nil, err
+		}
+	}
+
+	guids := make(map[string]struct{})
+	links := make(map[string]struct{})
+	newItems := items[:0]
+	for i, item := range items {
+		if existing[i] {
+			continue
+		}
+		_, seenGUID := guids[item.GUID]
+		_, seenLink := links[item.Link]
+		if seenGUID || seenLink {
+			continue
+		}
+		guids[item.GUID] = struct{}{}
+		if item.Link != "" {
+			links[item.Link] = struct{}{}
+		}
+		newItems = append(newItems, item)
+	}
+	clear(items[len(newItems):])
+	return newItems, nil
+}
+
+func (s *Storage) findExistingFeedItems(feedID int64, items []Item, existing []bool) error {
+	values := "(?, ?, ?)" + strings.Repeat(", (?, ?, ?)", len(items)-1)
+	args := make([]any, 0, 3*len(items)+2)
+	for i, item := range items {
+		args = append(args, i, item.GUID, item.Link)
+	}
+	args = append(args, feedID, feedID)
+	rows, err := s.db.Query(`
+		WITH candidates(pos, guid, link) AS (VALUES `+values+`)
+		SELECT c.pos FROM candidates c
+		WHERE EXISTS (SELECT 1 FROM items WHERE feed_id = ? AND guid = c.guid)
+		   OR (c.link <> '' AND EXISTS (SELECT 1 FROM items WHERE feed_id = ? AND link = c.link))`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var pos int
+		if err := rows.Scan(&pos); err != nil {
+			return err
+		}
+		existing[pos] = true
+	}
+	return rows.Err()
 }
 
 func (s *Storage) CreateItems(items []Item) error {
@@ -189,14 +256,21 @@ func (s *Storage) CreateItems(items []Item) error {
 		return err
 	}
 	defer tx.Rollback()
+	if err := insertItems(tx, items); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
 
+func insertItems(tx *sql.Tx, items []Item) error {
+	if len(items) == 0 {
+		return nil
+	}
 	insertItem, err := tx.Prepare(`
 		INSERT INTO items (id, feed_id, guid, title, link, date, content, author, image, status, hidden, stored_at)
 		SELECT (SELECT last_id + 1 FROM item_id_sequence), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-		WHERE NOT EXISTS (
-			SELECT 1 FROM items
-			WHERE feed_id = ? AND (guid = ? OR (? <> '' AND link = ?))
-		)
+		WHERE NOT EXISTS (SELECT 1 FROM items WHERE feed_id = ? AND guid = ?)
+		  AND (? = '' OR NOT EXISTS (SELECT 1 FROM items WHERE feed_id = ? AND link = ?))
 		ON CONFLICT(feed_id, guid) DO NOTHING`)
 	if err != nil {
 		return err
@@ -226,7 +300,7 @@ func (s *Storage) CreateItems(items []Item) error {
 		}
 		res, err := insertItem.Exec(item.FeedID, item.GUID, item.Title, item.Link,
 			item.Date.UTC().Format(time.RFC3339Nano), item.Content, item.Author, item.Image, status, item.Hidden, storedAt,
-			item.FeedID, item.GUID, item.Link, item.Link)
+			item.FeedID, item.GUID, item.Link, item.FeedID, item.Link)
 		if err != nil {
 			return err
 		}
@@ -240,7 +314,7 @@ func (s *Storage) CreateItems(items []Item) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 // applySearchFilter searches article titles only. The trigram FTS index covers

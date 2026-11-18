@@ -1,11 +1,16 @@
 package worker
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,13 +29,12 @@ func TestMain(m *testing.M) {
 
 func newTestDB(t *testing.T) *storage.Storage {
 	t.Helper()
-	f, err := os.CreateTemp("", "hayari-worker-test-*.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.Close()
-	t.Cleanup(func() { os.Remove(f.Name()) })
-	s, err := storage.Open(f.Name())
+	return openTestDB(t, filepath.Join(t.TempDir(), "hayari.db"))
+}
+
+func openTestDB(t *testing.T, path string) *storage.Storage {
+	t.Helper()
+	s, err := storage.Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -239,6 +243,78 @@ func TestRefreshFeedSkips304(t *testing.T) {
 	}
 }
 
+func TestRefreshFeedRetriesWhenArticleInsertFails(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "hayari.db")
+	db := openTestDB(t, path)
+	admin, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	if _, err := admin.Exec(`CREATE TRIGGER reject_second_item BEFORE INSERT ON items
+		WHEN NEW.guid = 'item-2' BEGIN SELECT RAISE(ABORT, 'failed test insert'); END`); err != nil {
+		t.Fatal(err)
+	}
+
+	const etag = `"revision-one"`
+	const modified = "Mon, 01 Jan 2024 00:00:00 GMT"
+	var conditionalRequests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("If-None-Match") == etag || r.Header.Get("If-Modified-Since") == modified {
+			conditionalRequests.Add(1)
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Last-Modified", modified)
+		fmt.Fprintf(w, rssSample, "http://"+r.Host, "http://"+r.Host, "http://"+r.Host)
+	}))
+	defer srv.Close()
+	feed := createFeedWithIcon(t, db, srv.URL+"/feed")
+	w := New(db)
+	w.RefreshFeed(feed.ID)
+	updated, err := db.GetFeed(feed.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.LastRefreshed != nil || updated.ETag != nil || updated.LastModified != nil || updated.LastError == nil {
+		t.Fatalf("failed refresh should only record the error: %+v", updated)
+	}
+	for _, filter := range []storage.ItemFilter{{}, {Search: "Hello"}} {
+		if count, err := db.CountItems(filter); err != nil || count != 0 {
+			t.Fatalf("rolled back item count for %+v = %d, %v", filter, count, err)
+		}
+	}
+	var searchRows int
+	if err := admin.QueryRow(`SELECT COUNT(*) FROM search`).Scan(&searchRows); err != nil || searchRows != 0 {
+		t.Fatalf("rolled back search rows = %d, %v", searchRows, err)
+	}
+	if _, err := admin.Exec(`DROP TRIGGER reject_second_item`); err != nil {
+		t.Fatal(err)
+	}
+	w.RefreshFeed(feed.ID)
+	if conditionalRequests.Load() != 0 {
+		t.Fatal("retry used validators from the failed response")
+	}
+	if count, err := db.CountItems(storage.ItemFilter{}); err != nil || count != 2 {
+		t.Fatalf("retried article count = %d, %v, want 2", count, err)
+	}
+	if count, err := db.CountItems(storage.ItemFilter{Search: "Hello"}); err != nil || count != 1 {
+		t.Fatalf("retried search count = %d, %v, want 1", count, err)
+	}
+	updated, err = db.GetFeed(feed.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.LastRefreshed == nil || updated.ETag == nil || updated.LastModified == nil || updated.LastError != nil {
+		t.Fatalf("successful retry did not record its validators: %+v", updated)
+	}
+	w.RefreshFeed(feed.ID)
+	if conditionalRequests.Load() != 1 {
+		t.Fatal("next refresh did not use the stored validators")
+	}
+}
+
 func TestRefreshFeedNoDuplicates(t *testing.T) {
 	db := newTestDB(t)
 	srv := newFeedServer(t)
@@ -354,6 +430,136 @@ func TestRefreshAll(t *testing.T) {
 	if count < 2 {
 		t.Errorf("count = %d, want at least 2", count)
 	}
+}
+
+func TestRefreshQueueSharesSlotsAndCoalescesFeeds(t *testing.T) {
+	db := newTestDB(t)
+	const feedCount = concurrentFeeds + 2
+	requests := make(chan string, 2*feedCount)
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- r.URL.Path
+		<-release
+		fmt.Fprintf(w, rssSample, "http://"+r.Host, "http://"+r.Host, "http://"+r.Host)
+	}))
+	defer srv.Close()
+	releaseRequests := sync.OnceFunc(func() { close(release) })
+	defer releaseRequests()
+	feeds := make([]*storage.Feed, feedCount)
+	for i := range feeds {
+		feeds[i] = createFeedWithIcon(t, db, fmt.Sprintf("%s/feed/%d", srv.URL, i))
+	}
+
+	w := New(db)
+	allDone := make(chan struct{})
+	go func() {
+		w.RefreshAll()
+		close(allDone)
+	}()
+	seen := make(map[string]bool)
+	receive := func() {
+		t.Helper()
+		select {
+		case path := <-requests:
+			if seen[path] {
+				t.Fatalf("duplicate request to %s", path)
+			}
+			seen[path] = true
+		case <-time.After(5 * time.Second):
+			t.Fatal("no feed request received")
+		}
+	}
+	for range concurrentFeeds {
+		receive()
+	}
+	for _, feed := range feeds {
+		w.RefreshFeedAsync(feed.ID)
+	}
+
+	w.refreshMu.Lock()
+	queued := append([]feedRefresh(nil), w.queue...)
+	workers, pending := w.workers, len(w.refreshes)
+	w.refreshMu.Unlock()
+	if workers != concurrentFeeds || len(queued) != feedCount-concurrentFeeds || pending != feedCount {
+		t.Fatalf("refreshes active=%d, queued=%d, pending=%d, want %d, %d, %d", workers, len(queued), pending, concurrentFeeds, feedCount-concurrentFeeds, feedCount)
+	}
+	last := queued[len(queued)-1]
+	if done := w.enqueueRefresh(last.id, true); done != last.done {
+		t.Fatal("synchronous refresh did not share the queued async refresh")
+	}
+	if done := w.enqueueRefresh(queued[0].id, true); done != queued[0].done {
+		t.Fatal("second synchronous refresh did not share the queued async refresh")
+	}
+	w.refreshMu.Lock()
+	prioritized := w.queue[0].id
+	w.refreshMu.Unlock()
+	if prioritized != last.id {
+		t.Fatal("synchronous refreshes did not preserve priority order")
+	}
+	releaseRequests()
+	for range feedCount - concurrentFeeds {
+		receive()
+	}
+	select {
+	case <-allDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("refresh all did not finish")
+	}
+	if len(requests) != 0 {
+		t.Fatal("extra HTTP requests after the shared refreshes completed")
+	}
+	if count, err := db.CountItems(storage.ItemFilter{}); err != nil || count != 2*feedCount {
+		t.Fatalf("article count = %d, %v, want %d", count, err, 2*feedCount)
+	}
+}
+
+func TestRefreshStopInterruptsActiveRequest(t *testing.T) {
+	db := newTestDB(t)
+	started := make(chan struct{})
+	canceled := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+		close(canceled)
+	}))
+	defer srv.Close()
+	feed := createFeedWithIcon(t, db, srv.URL)
+	w := New(db)
+	defer w.Stop()
+	result := make(chan error, 1)
+	go func() { result <- w.RefreshFeedContext(t.Context(), feed.ID) }()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("feed request did not start")
+	}
+	w.Stop()
+	select {
+	case err := <-result:
+		if !errors.Is(err, ErrStopped) {
+			t.Fatalf("refresh returned %v, want ErrStopped", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("refresh did not release its waiter")
+	}
+	select {
+	case <-canceled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("outgoing feed request was not canceled")
+	}
+}
+
+func createFeedWithIcon(t *testing.T, db *storage.Storage, url string) *storage.Feed {
+	t.Helper()
+	feed, err := db.CreateFeed(url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	icon := "test icon"
+	if err := db.UpdateFeedIcon(feed.ID, &icon); err != nil {
+		t.Fatal(err)
+	}
+	return feed
 }
 
 // --- Favicon ---

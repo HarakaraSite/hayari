@@ -747,6 +747,54 @@ func TestFreshRSSGReaderItemContentsForNetNewsWire(t *testing.T) {
 	}
 }
 
+func TestGreaderStreamItemContentsPreservesRequestOrder(t *testing.T) {
+	srv, ts := newTestServer(t)
+	feed := seedFeed(t, srv.db, "https://example.com/feed.xml", "")
+	items := seedItems(t, srv.db, feed.ID, 3)
+	first, hidden, second := items[2], items[1], items[0]
+	if err := srv.db.UpdateFeedTitleFilterKeywords(feed.ID, hidden.Title); err != nil {
+		t.Fatal(err)
+	}
+	claim, claimed, err := srv.db.ClaimTitleTranslations(feed.ID, 3)
+	if err != nil || len(claimed) != 2 {
+		t.Fatalf("claim title translations = %q, %v, %v", claim, claimed, err)
+	}
+	translated := "Translated title"
+	if err := srv.db.SetTitleTranslationResult(second.ID, claim, storage.TitleTranslationTranslated, &translated); err != nil {
+		t.Fatal(err)
+	}
+
+	ids := []string{strconv.FormatInt(first.ID, 10), strconv.FormatInt(hidden.ID, 10), "invalid"}
+	// Keep the visible second item beyond a full page of distinct IDs.
+	for i := int64(1); i <= 1000; i++ {
+		ids = append(ids, strconv.FormatInt(second.ID+i, 10))
+	}
+	ids = append(ids, fmt.Sprintf("tag:google.com,2005:reader/item/%016x", second.ID), strconv.FormatInt(first.ID, 10))
+
+	for _, prefix := range []string{"", freshRSSGReaderPrefix} {
+		token := loginAt(t, ts, prefix+"/accounts/ClientLogin")
+		var result struct {
+			Items []struct {
+				ID      string `json:"id"`
+				Title   string `json:"title"`
+				Content struct {
+					HTML string `json:"content"`
+				} `json:"content"`
+			} `json:"items"`
+		}
+		decodeJSON(t, grPost(t, ts, token, prefix+"/reader/api/0/stream/items/contents", url.Values{"i": ids}), &result)
+		if len(result.Items) != 3 {
+			t.Fatalf("prefix %q returned %d items, want 3", prefix, len(result.Items))
+		}
+		for i, want := range []storage.Item{first, second, first} {
+			got := result.Items[i]
+			if got.ID != fmt.Sprintf("tag:google.com,2005:reader/item/%016x", want.ID) || got.Title != want.Title || got.Content.HTML != want.Content {
+				t.Errorf("prefix %q item %d = %+v, want article %d with its original title and body", prefix, i, got, want.ID)
+			}
+		}
+	}
+}
+
 func TestGreaderEditTagMarkRead(t *testing.T) {
 	srv, ts := newTestServer(t)
 	token := login(t, ts)

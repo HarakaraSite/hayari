@@ -228,8 +228,18 @@ func (s *Server) handleFeeds(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Wait for the initial refresh so the client can immediately select the
-		// newly added feed and show its articles.
-		s.worker.RefreshFeed(feed.ID)
+		// newly added feed and show its articles. Time spent waiting for the
+		// shared worker should not consume the response write deadline.
+		controller := http.NewResponseController(w)
+		_ = controller.SetWriteDeadline(time.Time{})
+		refreshErr := s.worker.RefreshFeedContext(r.Context(), feed.ID)
+		_ = controller.SetWriteDeadline(time.Now().Add(writeTimeout))
+		if refreshErr != nil {
+			if r.Context().Err() == nil {
+				httpError(w, refreshErr, http.StatusServiceUnavailable)
+			}
+			return
+		}
 		feed, err = s.db.GetFeed(feed.ID)
 		if err != nil {
 			httpError(w, err, 500)

@@ -90,7 +90,7 @@ func (s *Server) importOutlines(outlines []opmlOutline, folderID *int64) (int, e
 					return count, err
 				}
 			}
-			go s.worker.RefreshFeed(feed.ID)
+			s.worker.RefreshFeedAsync(feed.ID)
 			count++
 		} else if len(o.Outlines) > 0 {
 			// Folder outline

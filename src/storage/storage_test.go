@@ -2,9 +2,11 @@ package storage
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 )
@@ -458,6 +460,64 @@ func makeItem(feedID int64, guid, title, content string) Item {
 	}
 }
 
+func TestNewFeedItemsPreservesInsertDeduplication(t *testing.T) {
+	s := newTestDB(t)
+	feed, err := s.CreateFeed("https://example.com/feed", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := makeItem(feed.ID, "stored", "Existing", "")
+	stored.Hidden = true
+	if err := s.CreateItems([]Item{stored}); err != nil {
+		t.Fatal(err)
+	}
+
+	linked := makeItem(feed.ID, "candidate", "Existing link", "")
+	linked.Link = stored.Link
+	first := makeItem(feed.ID, "candidate", "First new item", "")
+	items := []Item{linked, first}
+	for range 300 {
+		items = append(items, stored)
+	}
+	duplicate := makeItem(feed.ID, "other", "Second copy", "")
+	duplicate.Link = first.Link
+	emptyLink := makeItem(feed.ID, "other", "Independent item", "")
+	emptyLink.Link = ""
+	secondEmptyLink := makeItem(feed.ID, "third", "Different independent item", "")
+	secondEmptyLink.Link = ""
+	items = append(items, duplicate, emptyLink, secondEmptyLink)
+
+	result, err := s.NewFeedItems(feed.ID, items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []Item{first, emptyLink, secondEmptyLink}; !slices.Equal(result, want) {
+		t.Fatalf("new articles = %+v, want %+v", result, want)
+	}
+}
+
+func TestStoreFeedRefreshRejectsDeletedFeed(t *testing.T) {
+	s := newTestDB(t)
+	old, err := s.CreateFeed("https://example.com/old", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteFeed(old.ID); err != nil {
+		t.Fatal(err)
+	}
+	current, err := s.CreateFeed(old.FeedURL, nil)
+	if err != nil || current.ID <= old.ID {
+		t.Fatalf("resubscribing should assign a new feed ID, got %+v, %v", current, err)
+	}
+	item := makeItem(old.ID, "stale", "From an old refresh", "")
+	if err := s.StoreFeedRefresh(old.ID, "Old title", "", nil, nil, []Item{item}); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("stale refresh = %v, want sql.ErrNoRows", err)
+	}
+	if count, err := s.CountItems(ItemFilter{}); err != nil || count != 0 {
+		t.Fatalf("article count = %d, %v, want 0", count, err)
+	}
+}
+
 func TestItemCRUD(t *testing.T) {
 	s := newTestDB(t)
 
@@ -531,13 +591,13 @@ func TestItemStorageTimeWithLegacyDatabase(t *testing.T) {
 			t.Fatalf("migration %d: %v", i, err)
 		}
 	}
-	feed, err := legacy.CreateFeed("https://example.com/old.xml", nil)
-	if err != nil {
+	const oldFeedID int64 = 42
+	if _, err := db.Exec(`INSERT INTO feeds (id, feed_url) VALUES (?, 'https://example.com/old.xml')`, oldFeedID); err != nil {
 		t.Fatal(err)
 	}
 	oldDate := time.Now().Add(-48 * time.Hour).UTC()
 	if _, err := db.Exec("INSERT INTO items (feed_id, guid, title, date) VALUES (?, 'old', 'Old', ?)",
-		feed.ID, oldDate.Format(time.RFC3339Nano)); err != nil {
+		oldFeedID, oldDate.Format(time.RFC3339Nano)); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {
@@ -549,7 +609,11 @@ func TestItemStorageTimeWithLegacyDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { current.Close() })
-	if err := current.CreateItems([]Item{{FeedID: feed.ID, GUID: "new", Title: "New", Date: oldDate}}); err != nil {
+	newFeed, err := current.CreateFeed("https://example.com/new.xml", nil)
+	if err != nil || newFeed.ID <= oldFeedID {
+		t.Fatalf("new feed after migration = %+v, %v", newFeed, err)
+	}
+	if err := current.CreateItems([]Item{{FeedID: oldFeedID, GUID: "new", Title: "New", Date: oldDate}}); err != nil {
 		t.Fatal(err)
 	}
 	cutoff := time.Now().Add(-time.Hour)

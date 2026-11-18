@@ -114,6 +114,17 @@ var migrations = []string{
 	// 33
 	`CREATE TRIGGER items_advance_id_sequence AFTER INSERT ON items
 	BEGIN UPDATE item_id_sequence SET last_id = MAX(last_id, NEW.id); END`,
+	// 34: Skip previously stored links on feed refresh.
+	`CREATE INDEX idx_items_feed_link ON items(feed_id, link)`,
+	// 35: Read visible articles for one feed in date order.
+	`CREATE INDEX idx_items_visible_feed_date ON items(feed_id, date, id) WHERE hidden = 0`,
+	// 36: Count visible starred articles without scanning other articles.
+	`CREATE INDEX idx_items_visible_starred_feed ON items(feed_id) WHERE hidden = 0 AND starred = 1`,
+	// 37: A new subscription must not inherit refreshes for a deleted feed.
+	`CREATE TABLE feed_id_sequence AS SELECT COALESCE(MAX(id), 0) AS last_id FROM feeds`,
+	// 38
+	`CREATE TRIGGER feeds_advance_id_sequence AFTER INSERT ON feeds
+	BEGIN UPDATE feed_id_sequence SET last_id = MAX(last_id, NEW.id); END`,
 }
 
 func (s *Storage) migrate() error {
