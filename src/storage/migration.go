@@ -125,6 +125,10 @@ var migrations = []string{
 	// 38
 	`CREATE TRIGGER feeds_advance_id_sequence AFTER INSERT ON feeds
 	BEGIN UPDATE feed_id_sequence SET last_id = MAX(last_id, NEW.id); END`,
+	// 39: Cover both the unread count and newest unread date for each feed.
+	`CREATE INDEX idx_items_visible_unread_feed_date ON items(status, feed_id, date) WHERE status = 'unread' AND hidden = 0`,
+	// 40: Seek directly to the time window of an incremental Reader API sync.
+	`CREATE INDEX idx_items_visible_stored_at ON items(COALESCE(stored_at, unixepoch(date))) WHERE hidden = 0`,
 }
 
 func (s *Storage) migrate() error {

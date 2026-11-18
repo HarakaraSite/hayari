@@ -127,6 +127,9 @@ func (w *Worker) loop() {
 			if err := w.db.DeleteOldItems(); err != nil {
 				log.Printf("worker: cleanup: %v", err)
 			}
+			if err := w.db.Optimize(w.ctx); err != nil && w.ctx.Err() == nil {
+				log.Printf("worker: optimize database query plans: %v", err)
+			}
 		case <-w.ctx.Done():
 			return
 		}

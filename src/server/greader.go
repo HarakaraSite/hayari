@@ -725,43 +725,39 @@ func (s *Server) greaderEditTag(w http.ResponseWriter, r *http.Request) {
 	}
 	r.ParseForm()
 
-	for _, rawID := range r.Form["i"] {
-		id, err := parseItemID(rawID)
-		if err != nil {
-			continue
+	var status string
+	var starred *bool
+	// Each field takes its last recognized value, with removals applied after additions.
+	for _, tag := range r.Form["a"] {
+		switch tag {
+		case "user/-/state/com.google/read":
+			status = "read"
+		case "user/-/state/com.google/kept-unread":
+			status = "unread"
+		case "user/-/state/com.google/starred":
+			value := true
+			starred = &value
 		}
-		for _, tag := range r.Form["a"] {
-			switch tag {
-			case "user/-/state/com.google/read":
-				if err := s.db.UpdateItemStatus(id, "read"); err != nil {
-					httpError(w, err, 500)
-					return
-				}
-			case "user/-/state/com.google/starred":
-				if err := s.db.SetStarred(id, true); err != nil {
-					httpError(w, err, 500)
-					return
-				}
-			case "user/-/state/com.google/kept-unread":
-				if err := s.db.UpdateItemStatus(id, "unread"); err != nil {
-					httpError(w, err, 500)
-					return
-				}
+	}
+	for _, tag := range r.Form["r"] {
+		switch tag {
+		case "user/-/state/com.google/read":
+			status = "unread"
+		case "user/-/state/com.google/starred":
+			value := false
+			starred = &value
+		}
+	}
+	if status != "" || starred != nil {
+		ids := make([]int64, 0, len(r.Form["i"]))
+		for _, rawID := range r.Form["i"] {
+			if id, err := parseItemID(rawID); err == nil {
+				ids = append(ids, id)
 			}
 		}
-		for _, tag := range r.Form["r"] {
-			switch tag {
-			case "user/-/state/com.google/read":
-				if err := s.db.UpdateItemStatus(id, "unread"); err != nil {
-					httpError(w, err, 500)
-					return
-				}
-			case "user/-/state/com.google/starred":
-				if err := s.db.SetStarred(id, false); err != nil {
-					httpError(w, err, 500)
-					return
-				}
-			}
+		if err := s.db.UpdateItemsState(ids, status, starred); err != nil {
+			httpError(w, err, 500)
+			return
 		}
 	}
 

@@ -17,8 +17,7 @@ const App = (() => {
     nextCursor:  null,
     translationRevision: null,
     loading:     false,
-    selectedItem: null,
-    readabilityMode: false,
+    selectedDetail: null,
     unreadListNeedsRefresh: false,
     addFeedMode: 'find',   // 'find' | 'subscribe'
     titleTranslationAvailable: false,
@@ -497,7 +496,7 @@ const App = (() => {
       const li = document.createElement('li');
       li.dataset.itemId = item.id;
       li.setAttribute('role', 'option');
-      const isSelected = item.id === state.selectedItem?.id;
+      const isSelected = item.id === state.selectedDetail?.item.id;
       li.setAttribute('aria-selected', String(isSelected));
       const isUnread  = item.status === 'unread';
       const isStarred = !!item.starred;
@@ -520,7 +519,7 @@ const App = (() => {
   }
 
   // ── Item selection ─────────────────────────────────────────────
-  async function selectItem(item) {
+  function selectItem(item) {
     // Deselect previous
     itemList.querySelectorAll('.selected').forEach(el => {
       el.classList.remove('selected');
@@ -535,16 +534,24 @@ const App = (() => {
       li.scrollIntoView({ block: 'nearest' });
     }
 
-    state.selectedItem    = item;
-    state.readabilityMode = false;
-
-    await setItemStatus(item, 'read');
-    if (state.selectedItem === item) showDetail(item);
+    if (state.selectedDetail?.item !== item) {
+      // A new selection gets a new identity even when returning to the same row.
+      state.selectedDetail = { item, loading: false, readabilityRequest: null };
+    }
+    const detail = state.selectedDetail;
+    detail.readabilityRequest = null;
+    showDetail(item);
+    setItemStatus(item, 'read');
+    if (item.content === undefined && !detail.loading) {
+      loadItemBody(detail);
+    } else {
+      renderItemBody(detail);
+    }
   }
 
   function currentIndex() {
-    if (!state.selectedItem) return -1;
-    return state.items.findIndex(i => i.id === state.selectedItem.id);
+    const item = state.selectedDetail?.item;
+    return item ? state.items.findIndex(i => i.id === item.id) : -1;
   }
 
   async function navigateItems(dir) {
@@ -590,10 +597,43 @@ const App = (() => {
     if (item.link)   parts.push(`<a href="${encHTML(item.link)}" target="_blank" rel="noopener">Original</a>`);
     detailMeta.innerHTML = parts.join('<span class="sep"> · </span>');
     // Feed-name clicks are handled by the delegated listener in setupEventListeners
+  }
 
-    // Body
-    detailBody.innerHTML = item.content || '<p><em>No content.</em></p>';
-    prepareArticleLinks(detailBody);
+  async function loadItemBody(detail) {
+    detail.loading = true;
+    renderItemBody(detail);
+    let result;
+    try {
+      result = await API.getItem(detail.item.id);
+    } catch (_) {
+      result = null;
+    }
+    if (state.selectedDetail !== detail) return;
+    // The selected summary supplies the title and current toolbar state.
+    if (result) detail.item.content = result.content ?? '';
+    detail.loading = false;
+    if (!detail.readabilityRequest) renderItemBody(detail);
+  }
+
+  function renderItemBody(detail) {
+    if (detail.loading) {
+      renderArticleHTML('<p><em>Loading&#x2026;</em></p>');
+    } else if (detail.item.content !== undefined) {
+      renderArticleHTML(detail.item.content || '<p><em>No content.</em></p>');
+      prepareArticleLinks(detailBody);
+    } else {
+      renderArticleHTML('<p><em>Could not load article.</em></p>');
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'outline small';
+      retry.textContent = 'Retry';
+      retry.addEventListener('click', () => loadItemBody(detail));
+      detailBody.firstElementChild.append(' ', retry);
+    }
+  }
+
+  function renderArticleHTML(html) {
+    detailBody.innerHTML = html;
     detailBody.scrollTop = 0;
   }
 
@@ -617,7 +657,7 @@ const App = (() => {
   }
 
   async function toggleStar() {
-    const item = state.selectedItem;
+    const item = state.selectedDetail?.item;
     if (!item) return;
     const newStarred = !item.starred;
     item.starred = newStarred;
@@ -627,7 +667,7 @@ const App = (() => {
     } catch (_) {
       // Rollback on failure
       item.starred = !newStarred;
-      updateDetailToolbar(item);
+      if (state.selectedDetail?.item === item) updateDetailToolbar(item);
       return;
     }
 
@@ -645,7 +685,13 @@ const App = (() => {
       }
     }
 
-    updateDetailToolbar(item);
+    const listedItem = state.items.find(entry => entry.id === item.id);
+    if (listedItem && listedItem !== item) listedItem.starred = newStarred;
+    const selectedItem = state.selectedDetail?.item;
+    if (selectedItem?.id === item.id) {
+      if (selectedItem !== item) selectedItem.starred = newStarred;
+      updateDetailToolbar(selectedItem);
+    }
     await loadStats();
 
     if (state.filter === 'starred') {
@@ -655,7 +701,7 @@ const App = (() => {
   }
 
   async function toggleRead() {
-    const item = state.selectedItem;
+    const item = state.selectedDetail?.item;
     if (!item) return;
     const newStatus = item.status === 'read' ? 'unread' : 'read';
     await setItemStatus(item, newStatus);
@@ -671,9 +717,10 @@ const App = (() => {
       if (listedItem) listedItem.status = status;
       const li = itemList.querySelector(`[data-item-id="${item.id}"]`);
       if (li) li.classList.toggle('unread', status === 'unread');
-      if (state.selectedItem?.id === item.id) {
-        state.selectedItem.status = status;
-        updateDetailToolbar(state.selectedItem);
+      const selectedItem = state.selectedDetail?.item;
+      if (selectedItem?.id === item.id) {
+        selectedItem.status = status;
+        updateDetailToolbar(selectedItem);
       }
 
       // Keep the current unread rows until the next source navigation.
@@ -687,28 +734,33 @@ const App = (() => {
   }
 
   async function toggleReadability() {
-    if (!state.selectedItem) return;
-    state.readabilityMode = !state.readabilityMode;
-    btnReadability.classList.toggle('active', state.readabilityMode);
-
-    if (state.readabilityMode) {
-      detailBody.innerHTML = '<p><em>Loading&#x2026;</em></p>';
-      try {
-        const result = await API.fetchPage(state.selectedItem.link);
-        if (result && result.content) {
-          detailBody.innerHTML = extractContent(result.content);
-        } else {
-          throw new Error('empty');
-        }
-      } catch (_) {
-        detailBody.innerHTML = '<p><em>Could not fetch article.</em></p>';
-        state.readabilityMode = false;
-        btnReadability.classList.remove('active');
-      }
-    } else {
-      detailBody.innerHTML = state.selectedItem.content || '<p><em>No content.</em></p>';
+    const detail = state.selectedDetail;
+    if (!detail) return;
+    if (detail.readabilityRequest) {
+      detail.readabilityRequest = null;
+      btnReadability.classList.remove('active');
+      renderItemBody(detail);
+      return;
     }
-    detailBody.scrollTop = 0;
+
+    const request = {};
+    detail.readabilityRequest = request;
+    btnReadability.classList.add('active');
+    renderArticleHTML('<p><em>Loading&#x2026;</em></p>');
+    try {
+      const result = await API.fetchPage(detail.item.link);
+      if (state.selectedDetail !== detail || detail.readabilityRequest !== request) return;
+      if (!result?.content) throw new Error('empty');
+      renderArticleHTML(extractContent(result.content));
+    } catch (_) {
+      if (state.selectedDetail !== detail || detail.readabilityRequest !== request) return;
+      detail.readabilityRequest = null;
+      btnReadability.classList.remove('active');
+      renderItemBody(detail);
+      const error = document.createElement('p');
+      error.textContent = 'Could not fetch article.';
+      detailBody.prepend(error);
+    }
   }
 
   // Simple client-side content extraction
@@ -722,13 +774,14 @@ const App = (() => {
   }
 
   function openCurrentExternal() {
-    if (state.selectedItem && state.selectedItem.link) {
-      window.open(state.selectedItem.link, '_blank', 'noopener');
+    const link = state.selectedDetail?.item.link;
+    if (link) {
+      window.open(link, '_blank', 'noopener');
     }
   }
 
   function closeDetail() {
-    state.selectedItem = null;
+    state.selectedDetail = null;
     itemList.querySelectorAll('.selected').forEach(el => {
       el.classList.remove('selected');
       el.setAttribute('aria-selected', 'false');

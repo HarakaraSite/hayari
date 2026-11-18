@@ -484,12 +484,32 @@ func (s *Server) handleItems(w http.ResponseWriter, r *http.Request) {
 	if fetchLimit < math.MaxInt {
 		fetchLimit++
 	}
-	items, err := s.db.ListItems(pageFilter, fetchLimit, offset)
-	if err != nil {
-		httpError(w, err, 500)
-		return
-	}
 	response := map[string]interface{}{}
+	if q.Get("include_content") == "0" {
+		items, err := s.db.ListItemSummaries(pageFilter, fetchLimit, offset)
+		if err != nil {
+			httpError(w, err, 500)
+			return
+		}
+		if len(items) > limit {
+			last := items[limit-1]
+			response["next_cursor"] = encodeItemCursor(last.StoredDate, last.ID)
+			items = items[:limit]
+		}
+		response["items"] = items
+	} else {
+		items, err := s.db.ListItems(pageFilter, fetchLimit, offset)
+		if err != nil {
+			httpError(w, err, 500)
+			return
+		}
+		if len(items) > limit {
+			last := items[limit-1]
+			response["next_cursor"] = encodeItemCursor(last.StoredDate, last.ID)
+			items = items[:limit]
+		}
+		response["items"] = items
+	}
 	if q.Get("include_total") != "0" {
 		total, err := s.db.CountItems(filter)
 		if err != nil {
@@ -505,12 +525,6 @@ func (s *Server) handleItems(w http.ResponseWriter, r *http.Request) {
 		}
 		response["title_translations"] = translationStatus
 	}
-	if len(items) > limit {
-		items = items[:limit]
-		last := items[limit-1]
-		response["next_cursor"] = encodeItemCursor(last.StoredDate, last.ID)
-	}
-	response["items"] = items
 	writeJSON(w, response)
 }
 
@@ -518,6 +532,20 @@ func (s *Server) handleItem(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r.URL.Path, "/api/items/")
 	if err != nil {
 		http.Error(w, "invalid id", 400)
+		return
+	}
+	if r.Method == http.MethodGet {
+		item, err := s.db.GetItem(id)
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
+		if err != nil {
+			httpError(w, err, 500)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, item)
 		return
 	}
 	if r.Method != http.MethodPut {

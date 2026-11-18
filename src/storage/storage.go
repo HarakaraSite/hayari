@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"os"
 	"path/filepath"
@@ -45,4 +46,11 @@ func (s *Storage) Close() error {
 // Ping verifies that the database remains reachable.
 func (s *Storage) Ping() error {
 	return s.db.Ping()
+}
+
+// Optimize lets SQLite update its statistics when needed. Include tables that
+// the connection has not read and retain samples for estimating time ranges.
+func (s *Storage) Optimize(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `PRAGMA optimize=0x10002`)
+	return err
 }

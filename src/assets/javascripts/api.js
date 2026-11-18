@@ -42,10 +42,11 @@ const API = (() => {
   // Items
   const getItems = (params) => {
     const qs = new URLSearchParams(
-      Object.fromEntries(Object.entries({ ...params, include_total: 0 }).filter(([, v]) => v != null && v !== ''))
+      Object.fromEntries(Object.entries({ ...params, include_total: 0, include_content: 0 }).filter(([, v]) => v != null && v !== ''))
     ).toString();
     return request('GET', `/api/items?${qs}`);
   };
+  const getItem     = (id)        => request('GET',  `/api/items/${id}`);
   const updateItem  = (id, data)  => request('PUT',  `/api/items/${id}`, data);
   const markAllRead = (params)    => {
     const qs = new URLSearchParams(
@@ -79,7 +80,7 @@ const API = (() => {
   return {
     getFolders, createFolder, updateFolder, deleteFolder,
     getFeeds, createFeed, updateFeed, deleteFeed, findFeeds, refreshFeeds, getFeedErrors, startTitleTranslations, getCapabilities, getStatus,
-    getItems, updateItem, markAllRead,
+    getItems, getItem, updateItem, markAllRead,
     getStats,
     getSettings, saveSettings,
     fetchPage,

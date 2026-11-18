@@ -857,6 +857,71 @@ func TestGreaderEditTagStar(t *testing.T) {
 	}
 }
 
+func TestGreaderEditTagBatch(t *testing.T) {
+	srv, ts := newTestServer(t)
+	token := loginAt(t, ts, freshRSSGReaderPrefix+"/accounts/ClientLogin")
+	feed := seedFeed(t, srv.db, "https://example.com/feed.xml", "")
+	items := seedItems(t, srv.db, feed.ID, 3)
+	first, hidden, outside := items[0], items[1], items[2]
+	if err := srv.db.UpdateFeedTitleFilterKeywords(feed.ID, hidden.Title); err != nil {
+		t.Fatal(err)
+	}
+
+	ids := []string{strconv.FormatInt(first.ID, 10), "invalid"}
+	// Put the hidden article after a full batch, with missing IDs in between.
+	for id := int64(10000); id < 11000; id++ {
+		ids = append(ids, strconv.FormatInt(id, 10))
+	}
+	ids = append(ids, fmt.Sprintf("tag:google.com,2005:reader/item/%016x", hidden.ID), strconv.FormatInt(first.ID, 10))
+
+	edit := func(prefix string, additions, removals []string) {
+		t.Helper()
+		resp := grPost(t, ts, token, prefix+"/reader/api/0/edit-tag", url.Values{
+			"i": ids,
+			"a": additions,
+			"r": removals,
+		})
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "text/plain" || string(body) != "OK" {
+			t.Fatalf("batch edit returned %d (%s) %q", resp.StatusCode, resp.Header.Get("Content-Type"), body)
+		}
+	}
+	check := func(id int64, status string, starred bool) {
+		t.Helper()
+		item, err := srv.db.GetItem(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if item.Status != status || item.Starred != starred {
+			t.Errorf("item %d: status = %q and starred = %t, want %q and %t", id, item.Status, item.Starred, status, starred)
+		}
+	}
+
+	const read = "user/-/state/com.google/read"
+	const keptUnread = "user/-/state/com.google/kept-unread"
+	const starred = "user/-/state/com.google/starred"
+	edit(freshRSSGReaderPrefix, []string{read, keptUnread, read, starred, "unknown-tag"}, []string{keptUnread})
+	if err := srv.db.UpdateFeedTitleFilterKeywords(feed.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	check(first.ID, "read", true)
+	check(hidden.ID, "read", true)
+	check(outside.ID, "unread", false)
+
+	edit("", []string{read, keptUnread}, nil)
+	check(first.ID, "unread", true)
+	check(hidden.ID, "unread", true)
+
+	edit("", []string{read, starred}, []string{read, starred})
+	check(first.ID, "unread", false)
+	check(hidden.ID, "unread", false)
+	check(outside.ID, "unread", false)
+}
+
 func TestGreaderMarkAllAsRead(t *testing.T) {
 	srv, ts := newTestServer(t)
 	token := login(t, ts)

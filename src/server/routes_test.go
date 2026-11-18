@@ -358,6 +358,63 @@ func TestItemsCursorAfterMarkRead(t *testing.T) {
 	}
 }
 
+func TestItemSummariesAndDetail(t *testing.T) {
+	srv, ts := newTestServer(t)
+	feed := seedFeed(t, srv.db, "https://example.com/detail.xml", "")
+	items := seedItems(t, srv.db, feed.ID, 2)
+	claim, _, err := srv.db.ClaimTitleTranslations(feed.ID, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	translated := "Translated title"
+	if err := srv.db.SetTitleTranslationResult(items[0].ID, claim, storage.TitleTranslationTranslated, &translated); err != nil {
+		t.Fatal(err)
+	}
+
+	path := "/api/items?search=Item&limit=1"
+	var full struct {
+		Items      []storage.Item `json:"items"`
+		NextCursor string         `json:"next_cursor"`
+	}
+	decodeJSON(t, doRequest(t, ts, http.MethodGet, path, ""), &full)
+	if len(full.Items) != 1 || full.Items[0].Content != items[0].Content || full.NextCursor == "" {
+		t.Fatalf("default item list = %+v", full)
+	}
+	var compact struct {
+		Items             []map[string]json.RawMessage `json:"items"`
+		NextCursor        string                       `json:"next_cursor"`
+		TitleTranslations *titletranslation.Status     `json:"title_translations"`
+	}
+	decodeJSON(t, doRequest(t, ts, http.MethodGet, path+"&include_content=0&include_total=0", ""), &compact)
+	if len(compact.Items) != 1 || compact.NextCursor != full.NextCursor || compact.TitleTranslations == nil {
+		t.Fatalf("compact item list = %+v", compact)
+	}
+	summary := compact.Items[0]
+	for _, field := range []string{"content", "guid", "image"} {
+		if _, exists := summary[field]; exists {
+			t.Errorf("compact list includes %q", field)
+		}
+	}
+	if string(summary["id"]) != fmt.Sprint(items[0].ID) || string(summary["translated_title"]) != `"Translated title"` {
+		t.Fatalf("compact row = %+v", summary)
+	}
+
+	detailPath := fmt.Sprintf("/api/items/%d", items[0].ID)
+	var detail storage.Item
+	decodeJSON(t, doRequest(t, ts, http.MethodGet, detailPath, ""), &detail)
+	if detail.ID != items[0].ID || detail.Content != items[0].Content || detail.Author != items[0].Author {
+		t.Fatalf("article detail = %+v", detail)
+	}
+	if err := srv.db.UpdateFeedTitleFilterKeywords(feed.ID, items[0].Title); err != nil {
+		t.Fatal(err)
+	}
+	resp := doRequest(t, ts, http.MethodGet, detailPath, "")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("hidden article detail = HTTP %d, want 404", resp.StatusCode)
+	}
+}
+
 // --- GET /api/feeds/errors ---
 
 func TestFeedErrorsEmpty(t *testing.T) {

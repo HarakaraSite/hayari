@@ -81,6 +81,9 @@ func (s *Server) Start() error {
 	if err := s.db.ReleaseProcessingTitleTranslations(); err != nil {
 		return fmt.Errorf("release interrupted title translations: %w", err)
 	}
+	if err := s.db.Optimize(context.Background()); err != nil {
+		log.Printf("optimize database query plans: %v", err)
+	}
 	s.worker.Start()
 
 	mux := http.NewServeMux()

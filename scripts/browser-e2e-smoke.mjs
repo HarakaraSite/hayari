@@ -84,7 +84,7 @@ function makeItem(id, feedId) {
     title_translation_state: 'none',
     link: `https://example.invalid/article/${id}`,
     date: new Date(now - id * 3600e3).toISOString(),
-    content: `<p>Body of article ${id}. Here is a <a href="https://example.invalid/">link</a>.</p>`,
+    content: `<p id="body-${id}">Body of article ${id}. Here is a <a href="https://example.invalid/">link</a> and a <a href="#body-${id}">jump</a>.</p>`,
     author: 'E2E Author',
     status: id % 2 === 1 ? 'unread' : 'read',
     starred: id === 107,
@@ -153,6 +153,8 @@ async function main() {
     const assetStatus = new Map();
     const apiCalls = [];
     const feeds = [...FEEDS];
+    const detailGates = new Map();
+    const retryDetailPath = '/api/items/102';
     let refreshRunning = false;
     const translationStatus = { running: false, revision: 0 };
     let firstPageGate;
@@ -160,12 +162,16 @@ async function main() {
     let translationStatusGate;
     let translatedSearchGate;
     page.on('console', (msg) => {
-      if (msg.type() === 'error') errors.push(msg.text());
+      if (msg.type() !== 'error') return;
+      if (msg.location().url === `${base}${retryDetailPath}` && msg.text().includes('503')) return;
+      errors.push(msg.text());
     });
     page.on('pageerror', (err) => errors.push(String(err)));
     page.on('response', (res) => {
       const { pathname } = new URL(res.url());
-      if (res.status() >= 400) badResponses.push(`${res.status()} ${pathname}`);
+      if (res.status() >= 400 && !(res.status() === 503 && pathname === retryDetailPath)) {
+        badResponses.push(`${res.status()} ${pathname}`);
+      }
       if (pathname.startsWith('/stylesheets/') || pathname.startsWith('/javascripts/')) {
         assetStatus.set(pathname, res.status());
       }
@@ -242,22 +248,38 @@ async function main() {
         const remaining = items.filter((it) => it.id > cursor).slice(offset);
         const limit = Number(q.get('limit') || 40);
         const nextCursor = remaining.length > limit ? String(remaining[limit - 1].id) : undefined;
+        const pageItems = remaining.slice(0, limit);
         return ok({
-          items: remaining.slice(0, limit), next_cursor: nextCursor,
+          items: q.get('include_content') === '0'
+            ? pageItems.map(({ content, guid, image, ...summary }) => summary)
+            : pageItems,
+          next_cursor: nextCursor,
           total: q.get('include_total') === '0' ? undefined : items.length,
           title_translations: search ? translationStatus : undefined,
         });
       }
       if (path === '/api/items/mark-all') return noContent();
-      if (path.startsWith('/api/items/') && req.method() === 'PUT') {
+      if (/^\/api\/items\/\d+$/.test(path)) {
         const item = allItems.find((it) => it.id === Number(path.split('/').at(-1)));
-        const changes = req.postDataJSON();
-        if (readGate && changes.status === 'read') await readGate;
-        Object.assign(item, changes);
-        return noContent();
+        if (!item) return route.fulfill({ status: 404, body: '' });
+        if (req.method() === 'GET') {
+          const gate = detailGates.get(item.id);
+          detailGates.delete(item.id);
+          const detail = gate ? await gate : item;
+          return detail ? ok(detail) : route.fulfill({ status: 503, body: '' });
+        }
+        if (req.method() === 'PUT') {
+          const changes = req.postDataJSON();
+          if (readGate && changes.status === 'read') await readGate;
+          Object.assign(item, changes);
+          return noContent();
+        }
       }
       return route.fulfill({ status: 404, body: '' });
     });
+    await page.route(`${base}/page?*`, (route) => route.fulfill({
+      json: { content: '<article><p>Readability of article 101.</p></article>' },
+    }));
 
     // 1. The login page renders and every bundled asset loads.
     await page.goto(`${base}/login`, { waitUntil: 'networkidle' });
@@ -295,11 +317,76 @@ async function main() {
       'first page of 40 items',
     );
 
-    // 4. Opening an article shows title, meta, and body.
-    await page.locator('#item-list .item-entry').first().click();
-    await page.waitForSelector('#item-detail-content:not([hidden])');
-    assert((await page.textContent('#detail-title')).includes('Sample article'), 'detail title');
-    assert((await page.textContent('#detail-body')).includes('link'), 'detail body');
+    // 4. Opening an article loads its body on demand and ignores responses from older selections.
+    const detailGets = (id) => apiCalls.filter(c => c.method === 'GET' &&
+      (id === undefined ? /^\/api\/items\/\d+$/.test(c.path) : c.path === `/api/items/${id}`));
+    assert(detailGets().length === 0, 'listing articles does not fetch their bodies');
+    const article = (id) => page.locator(`#item-list [data-item-id="${id}"]`);
+    const detailBody = page.locator('#detail-body');
+    const waitForDetailResponse = (id) => page.waitForResponse(r =>
+      r.request().method() === 'GET' && new URL(r.url()).pathname === `/api/items/${id}`);
+    const nextFrames = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    let releaseArticle100;
+    let releaseArticle101;
+    detailGates.set(100, new Promise(resolve => { releaseArticle100 = resolve; }));
+    detailGates.set(101, new Promise(resolve => { releaseArticle101 = resolve; }));
+    try {
+      await article(100).click();
+      await waitFor(() => detailGets(100).length === 1, 'first article body request');
+      assert(await article(100).getAttribute('aria-selected') === 'true', 'row is selected while body loads');
+      assert((await page.textContent('#detail-title')).includes('Sample article 100'), 'title appears while body loads');
+      assert((await page.textContent('#detail-meta')).includes('E2E Author'), 'meta appears while body loads');
+      assert((await detailBody.textContent()).includes('Loading'), 'body shows its loading state');
+
+      await page.keyboard.press('j');
+      await waitFor(() => detailGets(101).length === 1, 'keyboard opens the next article');
+      await page.click('#btn-readability');
+      await waitFor(async () => (await detailBody.textContent()).includes('Readability of article 101'), 'Readability while body loads');
+      const response101 = waitForDetailResponse(101);
+      releaseArticle101(feed1Items[1]);
+      await (await response101).finished();
+      await nextFrames();
+      assert((await detailBody.textContent()).includes('Readability of article 101'), 'feed body does not replace Readability');
+      await page.click('#btn-readability');
+      await waitFor(async () => (await detailBody.textContent()).includes('Body of article 101'), 'leaving Readability restores the body');
+
+      await page.keyboard.press('k');
+      await waitFor(async () => (await detailBody.textContent()).includes('Body of article 100'), 'reselecting the first article loads its body');
+      const staleResponse = waitForDetailResponse(100);
+      releaseArticle100({ ...feed1Items[0], content: '<p>Stale body</p>' });
+      await (await staleResponse).finished();
+      await nextFrames();
+      assert((await detailBody.textContent()).includes('Body of article 100'), 'older response for the same article is ignored');
+      assert(await detailBody.locator('a[href^="https:"]').getAttribute('target') === '_blank', 'external article link opens a new tab');
+      assert(await detailBody.locator('a[href^="#"]').getAttribute('target') === null, 'article fragment link stays in the page');
+      await article(101).click();
+      await waitFor(async () => (await detailBody.textContent()).includes('Body of article 101'), 'reopening a loaded article restores its body');
+      assert(detailGets(101).length === 1, 'reopening a loaded row reuses the body');
+    } finally {
+      releaseArticle100(feed1Items[0]);
+      releaseArticle101(feed1Items[1]);
+    }
+
+    let releaseClosedArticle;
+    detailGates.set(102, new Promise(resolve => { releaseClosedArticle = resolve; }));
+    try {
+      await article(102).click();
+      await waitFor(() => detailGets(102).length === 1, 'body request for article to close');
+      await page.keyboard.press('q');
+      const closedResponse = waitForDetailResponse(102);
+      releaseClosedArticle({ ...feed1Items[2], content: '<p>Closed article body</p>' });
+      await (await closedResponse).finished();
+      await nextFrames();
+      assert(await page.locator('#item-detail-content').isHidden(), 'late response keeps the article closed');
+    } finally {
+      releaseClosedArticle(feed1Items[2]);
+    }
+    detailGates.set(102, Promise.resolve(null));
+    await article(102).click();
+    await detailBody.getByRole('button', { name: 'Retry' }).click();
+    await waitFor(async () => (await detailBody.textContent()).includes('Body of article 102'), 'retry recovers a failed body load');
+    assert(detailGets(102).length === 3, 'closed response was discarded and failure was retried');
+    await article(100).click();
 
     // 5. Toggling the star issues the API mutation and updates the button.
     const beforeStar = apiCalls.length;
@@ -360,16 +447,29 @@ async function main() {
     await waitFor(async () => (await page.locator('#item-list .item-entry.unread').count()) === 40, 'first unread page');
     const beforeRead = apiCalls.length;
     let releaseRead;
+    let releaseReadDetail;
     readGate = new Promise(resolve => { releaseRead = resolve; });
+    detailGates.set(100, new Promise(resolve => { releaseReadDetail = resolve; }));
     try {
       await page.locator('#item-list .item-entry').first().evaluate(row => {
         row.click();
         row.click();
       });
-      await waitFor(() => apiCalls.slice(beforeRead).some(c => c.method === 'PUT'), 'first read request');
+      await waitFor(() => ['PUT', 'GET'].every(method => apiCalls.slice(beforeRead).some(c =>
+        c.method === method && c.path === '/api/items/100')), 'read and body requests start in parallel');
+      releaseRead();
+      await page.waitForSelector('#btn-toggle-read.active');
+      releaseReadDetail({ ...feed1Items[0], status: 'unread', starred: false, title: 'Stale title' });
+      await waitFor(async () => (await detailBody.textContent()).includes('Body of article 100'), 'body after mark-read');
+      assert(await page.locator('#btn-toggle-read.active').count() === 1, 'body response preserves updated read state');
+      assert(await page.locator('#btn-star.active').count() === 1, 'body response preserves current star');
+      assert((await page.textContent('#detail-title')).includes('Sample article 100'), 'body response preserves current title');
+      assert(apiCalls.slice(beforeRead).filter(c => c.method === 'GET' && c.path === '/api/items/100').length === 1,
+        'double-clicking a row shares one body request');
     } finally {
       releaseRead();
       readGate = null;
+      releaseReadDetail(feed1Items[0]);
     }
     await waitFor(async () => (await page.locator('#item-list .item-entry.unread').count()) === 39, 'first item marked read');
     await page.evaluate(() => {
@@ -531,6 +631,7 @@ async function main() {
 
     // 16. No broken assets and no console errors.
     assert(apiCalls.filter(c => c.path === '/api/items').every(c => new URLSearchParams(c.search).get('include_total') === '0'), 'Web UI skips the full result count');
+    assert(apiCalls.filter(c => c.path === '/api/items').every(c => new URLSearchParams(c.search).get('include_content') === '0'), 'Web UI requests summary rows');
     for (const asset of ASSETS) {
       assert(assetStatus.get(asset) === 200, `${asset} → ${assetStatus.get(asset)}`);
     }
