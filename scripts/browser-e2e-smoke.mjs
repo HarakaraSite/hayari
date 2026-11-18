@@ -153,6 +153,9 @@ async function main() {
     const assetStatus = new Map();
     const apiCalls = [];
     let refreshRunning = false;
+    const translationStatus = { running: false, revision: 0 };
+    let firstPageGate;
+    let readGate;
     page.on('console', (msg) => {
       if (msg.type() === 'error') errors.push(msg.text());
     });
@@ -175,8 +178,10 @@ async function main() {
       });
       const noContent = () => route.fulfill({ status: 204, body: '' });
 
-      if (path === '/api/status') return ok({ running: refreshRunning, version: 'e2e' });
-      if (path === '/api/capabilities') return ok({ title_translation: false });
+      if (path === '/api/status') {
+        return ok({ running: refreshRunning, version: 'e2e', title_translations: translationStatus });
+      }
+      if (path === '/api/capabilities') return ok({ title_translation: true });
       if (path === '/api/settings') {
         return req.method() === 'PUT'
           ? noContent()
@@ -187,6 +192,12 @@ async function main() {
       if (path === '/api/feeds/refresh' && req.method() === 'POST') {
         refreshRunning = true;
         return route.fulfill({ status: 202, body: '' });
+      }
+      if (path === '/api/feeds/1/title-translations' && req.method() === 'POST') {
+        translationStatus.running = true;
+        return route.fulfill({
+          status: 202, contentType: 'application/json', body: JSON.stringify({ accepted: 4 }),
+        });
       }
       if (path === '/api/stats') {
         const unread = {};
@@ -202,24 +213,31 @@ async function main() {
       }
       if (path === '/api/items' && req.method() === 'GET') {
         const q = url.searchParams;
+        if (firstPageGate && !q.has('cursor')) await firstPageGate;
         let items = allItems;
         if (q.get('feed_id')) items = items.filter((it) => it.feed_id === Number(q.get('feed_id')));
         if (q.get('folder_id')) items = items.filter((it) => it.feed_id === Number(q.get('folder_id')));
         if (q.get('status') === 'unread') items = items.filter((it) => it.status === 'unread');
         if (q.get('starred') === 'true') items = items.filter((it) => it.starred);
-        if (q.get('search')) items = items.filter((it) => it.title.includes(q.get('search')));
+        const search = q.get('search');
+        if (search) items = items.filter((it) => it.title.includes(search) || it.translated_title?.includes(search));
         const cursor = Number(q.get('cursor') || 0);
         const offset = Number(q.get('offset') || 0);
         // Fixture IDs increase as dates get older.
         const remaining = items.filter((it) => it.id > cursor).slice(offset);
         const limit = Number(q.get('limit') || 40);
         const nextCursor = remaining.length > limit ? String(remaining[limit - 1].id) : undefined;
-        return ok({ items: remaining.slice(0, limit), total: items.length, next_cursor: nextCursor });
+        return ok({
+          items: remaining.slice(0, limit), total: items.length, next_cursor: nextCursor,
+          title_translations: search ? translationStatus : undefined,
+        });
       }
       if (path === '/api/items/mark-all') return noContent();
       if (path.startsWith('/api/items/') && req.method() === 'PUT') {
         const item = allItems.find((it) => it.id === Number(path.split('/').at(-1)));
-        Object.assign(item, req.postDataJSON());
+        const changes = req.postDataJSON();
+        if (readGate && changes.status === 'read') await readGate;
+        Object.assign(item, changes);
         return noContent();
       }
       return route.fulfill({ status: 404, body: '' });
@@ -323,7 +341,19 @@ async function main() {
     for (const item of feed1Items) item.status = 'unread';
     await page.click('#status-tabs button[data-filter="unread"]');
     await waitFor(async () => (await page.locator('#item-list .item-entry.unread').count()) === 40, 'first unread page');
-    await page.locator('#item-list .item-entry').first().click();
+    const beforeRead = apiCalls.length;
+    let releaseRead;
+    readGate = new Promise(resolve => { releaseRead = resolve; });
+    try {
+      await page.locator('#item-list .item-entry').first().evaluate(row => {
+        row.click();
+        row.click();
+      });
+      await waitFor(() => apiCalls.slice(beforeRead).some(c => c.method === 'PUT'), 'first read request');
+    } finally {
+      releaseRead();
+      readGate = null;
+    }
     await waitFor(async () => (await page.locator('#item-list .item-entry.unread').count()) === 39, 'first item marked read');
     await page.evaluate(() => {
       const list = document.querySelector('#item-list');
@@ -331,6 +361,11 @@ async function main() {
     });
     await waitFor(async () => (await page.locator('#item-list .item-entry.unread').count()) === 44, 'remaining unread articles');
     assert(await page.locator('#item-list [data-item-id="140"]').count() === 1, 'first article from the second page');
+    assert(apiCalls.slice(beforeRead).filter(c => c.method === 'PUT').length === 1, 'opening twice sends one read request');
+    await waitFor(
+      async () => await page.locator('[data-feed-id="1"] .sidebar-count-badge').textContent() === '44',
+      'reading once decreases the badge once',
+    );
 
     // 10. The refresh button waits for acquisition before reloading the sidebar and items.
     const beforeRefresh = apiCalls.length;
@@ -344,7 +379,84 @@ async function main() {
     assert(await page.locator('[data-feed-id="1"] .sidebar-count-badge').textContent() === '45', 'badge includes the new article');
     assert(await page.locator('#item-list .item-entry').first().getAttribute('data-item-id') === '99', 'list includes the new article');
 
-    // 11. No broken assets and no console errors.
+    // 11. Selecting a feed again includes articles saved while the page was open.
+    allItems.unshift(makeItem(97, 1));
+    const beforeSourceReload = apiCalls.length;
+    await page.locator('[data-feed-id="1"] .feed-row').click();
+    await waitFor(
+      () => apiCalls.slice(beforeSourceReload).some(c => c.path === '/api/stats'),
+      'reopening the feed refreshes the counts',
+    );
+    await waitFor(
+      async () => await page.locator('[data-feed-id="1"] .sidebar-count-badge').textContent() === '46',
+      'badge includes the article saved in the background',
+    );
+    assert(await page.locator('#item-list .item-entry').first().getAttribute('data-item-id') === '97', 'list includes the background article');
+
+    // 12. A sentinel already inside the margin during page one must still load page two.
+    await page.addInitScript(() => {
+      const NativeObserver = window.IntersectionObserver;
+      window.IntersectionObserver = class extends NativeObserver {
+        constructor(callback, options) {
+          super((entries, observer) => {
+            if (entries.some(entry => entry.isIntersecting)) window.sentinelWasVisible = true;
+            callback(entries, observer);
+          }, options);
+        }
+      };
+    });
+    let releaseFirstPage;
+    firstPageGate = new Promise(resolve => { releaseFirstPage = resolve; });
+    try {
+      await page.setViewportSize({ width: 1280, height: 3600 });
+      await page.reload();
+      await page.waitForFunction(() => window.sentinelWasVisible);
+    } finally {
+      releaseFirstPage();
+      firstPageGate = null;
+    }
+    const unreadCount = allItems.filter(item => item.status === 'unread').length;
+    await waitFor(
+      async () => await page.locator('#item-list .item-entry').count() === unreadCount,
+      'infinite scroll fills the tall viewport after a delayed first page',
+    );
+
+    // 13. Newly translated search matches above the cursor appear without moving the visible article.
+    const translatedMatches = allItems.filter(item => item.feed_id === 1 && item.status === 'unread');
+    const newMatches = translatedMatches.slice(0, 4);
+    for (const item of translatedMatches.slice(4)) item.title = '検索語 ' + item.title;
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.locator('[data-feed-id="1"] .feed-row').click();
+    await page.locator('#search-input').fill('検索語');
+    const searchRows = page.locator('#item-list .item-entry');
+    await waitFor(
+      async () => (await searchRows.count()) === 40 &&
+        (await searchRows.first().getAttribute('data-item-id')) === String(translatedMatches[4].id),
+      'first page of matches before translation',
+    );
+    page.once('dialog', dialog => dialog.accept());
+    await page.locator('#btn-translate-titles').click();
+    await waitFor(() => translationStatus.running, 'search translation started');
+    const list = page.locator('#item-list');
+    await list.evaluate(el => { el.scrollTop = el.scrollHeight; });
+    await waitFor(async () => (await searchRows.count()) === translatedMatches.length - 4, 'all original matches');
+    await list.evaluate(el => { el.scrollTop = el.scrollHeight; });
+    const firstVisible = () => list.evaluate(el => {
+      const top = el.getBoundingClientRect().top;
+      return [...el.children].find(row => row.dataset.itemId && row.getBoundingClientRect().bottom > top)?.dataset.itemId;
+    });
+    const anchor = await firstVisible();
+    for (const item of newMatches) {
+      item.translated_title = '検索語の翻訳';
+      item.title_translation_state = 'translated';
+    }
+    translationStatus.revision++;
+    translationStatus.running = false;
+    await waitFor(async () => (await searchRows.count()) === translatedMatches.length, 'all translated search matches');
+    assert(await searchRows.first().getAttribute('data-item-id') === String(newMatches[0].id), 'new matches sort first');
+    assert(await firstVisible() === anchor, 'first visible article is preserved');
+
+    // 14. No broken assets and no console errors.
     for (const asset of ASSETS) {
       assert(assetStatus.get(asset) === 200, `${asset} → ${assetStatus.get(asset)}`);
     }

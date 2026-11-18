@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"unicode"
 	"unicode/utf8"
 
@@ -35,9 +36,22 @@ type Manager struct {
 	ctx         context.Context
 	cancel      context.CancelFunc
 	jobs, henji chan struct{}
+	revision    atomic.Uint64
 	wg          sync.WaitGroup
 	mu          sync.Mutex
 	stopping    bool
+}
+
+type Status struct {
+	Running  bool   `json:"running"`
+	Revision uint64 `json:"revision"`
+}
+
+func (m *Manager) Status() Status {
+	if m == nil {
+		return Status{}
+	}
+	return Status{Running: len(m.jobs) > 0, Revision: m.revision.Load()}
 }
 
 func New(db *storage.Storage, config Config) *Manager {
@@ -76,7 +90,12 @@ func (m *Manager) Start(feedID int64) (int, error) {
 	}
 	m.wg.Add(1)
 	m.mu.Unlock()
-	go func() { defer m.wg.Done(); defer func() { <-m.jobs }(); m.run(claim, items) }()
+	go func() {
+		defer m.wg.Done()
+		defer func() { <-m.jobs }()
+		m.run(claim, items)
+		m.revision.Add(1)
+	}()
 	return len(items), nil
 }
 func (m *Manager) run(claim string, items []storage.Item) {

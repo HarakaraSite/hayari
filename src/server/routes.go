@@ -19,6 +19,7 @@ import (
 	"forge.harakara.site/littleisland/hayari/src/content"
 	"forge.harakara.site/littleisland/hayari/src/safehttp"
 	"forge.harakara.site/littleisland/hayari/src/storage"
+	"forge.harakara.site/littleisland/hayari/src/titletranslation"
 	"forge.harakara.site/littleisland/hayari/src/worker"
 )
 
@@ -103,8 +104,9 @@ var pageClient = safehttp.NewClient(15 * time.Second)
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, map[string]interface{}{
-		"running": s.worker.Running(),
-		"version": s.Version,
+		"running":            s.worker.Running(),
+		"version":            s.Version,
+		"title_translations": s.translations.Status(),
 	})
 }
 
@@ -443,6 +445,12 @@ func (s *Server) handleItems(w http.ResponseWriter, r *http.Request) {
 		FolderID: parseIntPtr(q.Get("folder_id")),
 		Search:   q.Get("search"),
 	}
+	var translationStatus titletranslation.Status
+	if filter.Search != "" {
+		// Take the revision before the query so a translation completed during
+		// the request can still invalidate these search results.
+		translationStatus = s.translations.Status()
+	}
 	limit := 50
 	if l := q.Get("limit"); l != "" {
 		if n, err := strconv.Atoi(l); err == nil && n > 0 {
@@ -477,6 +485,13 @@ func (s *Server) handleItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response := map[string]interface{}{"total": total}
+	if filter.Search != "" {
+		current := s.translations.Status()
+		if current.Running || current.Revision != translationStatus.Revision {
+			translationStatus.Running = true
+		}
+		response["title_translations"] = translationStatus
+	}
 	if len(items) > limit {
 		items = items[:limit]
 		last := items[limit-1]
@@ -671,6 +686,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	for _, st := range starredStats {
 		starred[st.FeedID] = st.Count
 	}
+	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, map[string]interface{}{"unread": unread, "starred": starred})
 }
 

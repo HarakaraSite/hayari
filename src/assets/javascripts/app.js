@@ -15,6 +15,7 @@ const App = (() => {
     search:      '',
     items:       [],
     nextCursor:  null,
+    translationRevision: null,
     loading:     false,
     selectedItem: null,
     readabilityMode: false,
@@ -24,7 +25,13 @@ const App = (() => {
   };
 
   const PAGE_SIZE = 40;
+  const TITLE_TRANSLATION_LIMIT = 50;
   const MAX_UNREAD_BADGE_COUNT = 999;
+  const pendingReadUpdates = new Set();
+  let latestItemsRequest = 0;
+  let latestStatsRequest = 0;
+  let loadMoreObserver;
+  let searchTranslationTimer = null;
 
   // ── DOM refs ───────────────────────────────────────────────────
   const $ = (sel) => document.querySelector(sel);
@@ -107,14 +114,30 @@ const App = (() => {
 
   // ── Sidebar ────────────────────────────────────────────────────
   async function loadSidebar() {
-    const [feeds, folders, stats] = await Promise.all([
-      API.getFeeds(), API.getFolders(), API.getStats(),
+    const [feeds, folders] = await Promise.all([
+      API.getFeeds(), API.getFolders(), loadStats(false),
     ]);
     state.feeds    = feeds   || [];
     state.folders  = folders || [];
-    state.feedStats = (stats && stats.unread) || {};
-    state.starStats = (stats && stats.starred) || {};
     renderSidebar();
+  }
+
+  async function loadStats(updateSidebar = true) {
+    const request = ++latestStatsRequest;
+    try {
+      const stats = await API.getStats();
+      if (!stats || request !== latestStatsRequest) return;
+      state.feedStats = stats.unread || {};
+      state.starStats = stats.starred || {};
+      if (!updateSidebar || state.filter === 'all') return;
+      if (state.filter === 'unread' && state.unreadListNeedsRefresh) {
+        syncUnreadSidebarCounts();
+      } else {
+        renderSidebar();
+      }
+    } catch (err) {
+      console.error('load article counts:', err);
+    }
   }
 
   function renderSidebar() {
@@ -271,16 +294,6 @@ const App = (() => {
     return li;
   }
 
-  // Reading an item keeps it visible until the user returns to the source list.
-  // The counts still update immediately; the next source navigation applies the
-  // unread filter and removes feeds whose counts reached zero.
-  function refreshBadges() {
-    if (state.filter === 'unread') {
-      state.unreadListNeedsRefresh = true;
-      syncUnreadSidebarCounts();
-    }
-  }
-
   function appendCountBadge(row, count) {
     setCountBadge(row, count);
   }
@@ -379,41 +392,78 @@ const App = (() => {
   }
 
   // ── Item list ──────────────────────────────────────────────────
-  async function loadItems(reset = true) {
+  async function loadItems(reset = true, keepPosition = false) {
     if (!reset && (state.loading || !state.nextCursor)) return;
 
-    if (reset) {
-      state.items  = [];
+    const request = ++latestItemsRequest;
+    if (reset && !keepPosition) {
+      state.items = [];
       state.nextCursor = null;
-      itemList.innerHTML = '';
-      itemList.appendChild(loadMoreSentinel);
-      itemListEmpty.hidden = true;
+      state.translationRevision = null;
+      itemList.replaceChildren(loadMoreSentinel);
     }
+    itemListEmpty.hidden = true;
 
-    // A reset replaces the array so a response for the old view can be ignored.
-    const items = state.items;
     state.loading = true;
     const params = buildItemParams();
-    params.limit  = PAGE_SIZE;
-    params.cursor = state.nextCursor;
+    params.limit = keepPosition ? Math.max(PAGE_SIZE, state.items.length + TITLE_TRANSLATION_LIMIT) : PAGE_SIZE;
+    params.cursor = reset ? null : state.nextCursor;
 
     try {
-      const data     = await API.getItems(params);
-      if (items !== state.items) return;
-      const newItems = (data && data.items) || [];
+      const data = await API.getItems(params);
+      if (request !== latestItemsRequest) return;
+      const translations = data?.title_translations;
+      const revision = translations?.revision ?? null;
+      if (!reset && translations && revision !== state.translationRevision) {
+        // New search matches can be above the current cursor.
+        return loadItems(true, true);
+      }
+      const newItems = data?.items || [];
       state.nextCursor = data?.next_cursor || null;
-      items.push(...newItems);
-      renderItems(newItems);
+      state.translationRevision = revision;
+      if (keepPosition) {
+        replaceSearchResults(newItems);
+      } else {
+        state.items.push(...newItems);
+        renderItems(newItems);
+      }
       itemListEmpty.textContent = 'No items';
-      itemListEmpty.hidden = items.length > 0;
+      itemListEmpty.hidden = state.items.length > 0;
+      loadStats();
+      if (translations?.running) watchSearchTranslations();
+      if (state.nextCursor) {
+        // Report the new intersection even if the sentinel never left the margin.
+        loadMoreObserver.unobserve(loadMoreSentinel);
+        loadMoreObserver.observe(loadMoreSentinel);
+      }
     } catch (err) {
-      if (items !== state.items) return;
+      if (request !== latestItemsRequest) return;
       console.error('loadItems:', err);
-      itemListEmpty.textContent = 'Failed to load items';
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'outline small';
+      retry.textContent = 'Retry';
+      retry.addEventListener('click', () => loadItems(reset, keepPosition));
+      itemListEmpty.textContent = reset ? 'Failed to load items. ' : 'Failed to load more items. ';
+      itemListEmpty.appendChild(retry);
       itemListEmpty.hidden = false;
     } finally {
-      if (items === state.items) state.loading = false;
+      if (request === latestItemsRequest) state.loading = false;
     }
+  }
+
+  function replaceSearchResults(items) {
+    const scrollTop = itemList.scrollTop;
+    const listTop = itemList.getBoundingClientRect().top;
+    const anchor = scrollTop > 0 && [...itemList.children].find(row =>
+      row.dataset.itemId && row.getBoundingClientRect().bottom > listTop);
+    const anchorTop = anchor ? anchor.getBoundingClientRect().top : 0;
+
+    state.items = items;
+    itemList.replaceChildren(loadMoreSentinel);
+    renderItems(items);
+    const row = anchor && itemList.querySelector(`[data-item-id="${anchor.dataset.itemId}"]`);
+    itemList.scrollTop = row ? itemList.scrollTop + row.getBoundingClientRect().top - anchorTop : scrollTop;
   }
 
   function buildItemParams() {
@@ -437,12 +487,14 @@ const App = (() => {
       const li = document.createElement('li');
       li.dataset.itemId = item.id;
       li.setAttribute('role', 'option');
-      li.setAttribute('aria-selected', 'false');
+      const isSelected = item.id === state.selectedItem?.id;
+      li.setAttribute('aria-selected', String(isSelected));
       const isUnread  = item.status === 'unread';
       const isStarred = !!item.starred;
       li.className = 'item-entry' +
         (isUnread  ? ' unread'  : '') +
-        (isStarred ? ' starred' : '');
+        (isStarred ? ' starred' : '') +
+        (isSelected ? ' selected' : '');
 
       li.innerHTML =
         `<div class="item-top-row">` +
@@ -476,25 +528,8 @@ const App = (() => {
     state.selectedItem    = item;
     state.readabilityMode = false;
 
-    // Mark read on open
-    if (item.status === 'unread') {
-      try {
-        await API.updateItem(item.id, { status: 'read' });
-      } catch (err) {
-        console.error('mark item read:', err);
-        showDetail(item);
-        return;
-      }
-      item.status = 'read';
-      if (li) li.classList.remove('unread');
-      // Update stats badge
-      if (state.feedStats[item.feed_id] > 0) {
-        state.feedStats[item.feed_id]--;
-        refreshBadges();
-      }
-    }
-
-    showDetail(item);
+    await setItemStatus(item, 'read');
+    if (state.selectedItem === item) showDetail(item);
   }
 
   function currentIndex() {
@@ -601,11 +636,10 @@ const App = (() => {
     }
 
     updateDetailToolbar(item);
-    state.starStats[item.feed_id] = Math.max(0, (state.starStats[item.feed_id] || 0) + (newStarred ? 1 : -1));
+    await loadStats();
 
     if (state.filter === 'starred') {
-      ensureVisibleSource();
-      renderSidebar();
+      if (ensureVisibleSource()) renderSidebar();
       await loadItems(true);
     }
   }
@@ -618,30 +652,27 @@ const App = (() => {
   }
 
   async function setItemStatus(item, status) {
-    const old = item.status;
-    if (old === status) return;
+    if (item.status === status || pendingReadUpdates.has(item.id)) return;
+    pendingReadUpdates.add(item.id);
     try {
       await API.updateItem(item.id, { status });
+      item.status = status;
+      const listedItem = state.items.find(entry => entry.id === item.id);
+      if (listedItem) listedItem.status = status;
+      const li = itemList.querySelector(`[data-item-id="${item.id}"]`);
+      if (li) li.classList.toggle('unread', status === 'unread');
+      if (state.selectedItem?.id === item.id) {
+        state.selectedItem.status = status;
+        updateDetailToolbar(state.selectedItem);
+      }
+
+      // Keep the current unread rows until the next source navigation.
+      if (state.filter === 'unread') state.unreadListNeedsRefresh = true;
+      loadStats();
     } catch (err) {
       console.error('set item status:', err);
-      return;
-    }
-    item.status = status;
-
-    // Update list item CSS
-    const li = itemList.querySelector(`[data-item-id="${item.id}"]`);
-    if (li) {
-      li.classList.toggle('unread', status === 'unread');
-    }
-
-    // Update toolbar
-    updateDetailToolbar(item);
-
-    // Adjust badge counts
-    const delta = (status === 'unread' ? 1 : 0) - (old === 'unread' ? 1 : 0);
-    if (delta !== 0) {
-      state.feedStats[item.feed_id] = Math.max(0, (state.feedStats[item.feed_id] || 0) + delta);
-      refreshBadges();
+    } finally {
+      pendingReadUpdates.delete(item.id);
     }
   }
 
@@ -931,15 +962,13 @@ const App = (() => {
     await API.markAllRead(params);
     // Keep the current unread list visible until the user navigates back to
     // the source list, matching the behavior when opening a single item.
-    const stats = await API.getStats();
-    state.feedStats = (stats && stats.unread) || {};
-    state.starStats = (stats && stats.starred) || {};
     state.items.forEach(item => {
       item.status = 'read';
       const li = itemList.querySelector(`[data-item-id="${item.id}"]`);
       if (li) li.classList.remove('unread');
     });
-    refreshBadges();
+    if (state.filter === 'unread') state.unreadListNeedsRefresh = true;
+    await loadStats();
   }
 
   // ── Search ─────────────────────────────────────────────────────
@@ -1217,12 +1246,12 @@ const App = (() => {
 
   // ── Infinite scroll ────────────────────────────────────────────
   function setupInfiniteScroll() {
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting) {
+    loadMoreObserver = new IntersectionObserver((entries) => {
+      if (entries.at(-1).isIntersecting) {
         loadItems(false);
       }
     }, { root: itemList, rootMargin: '0px 0px 200px 0px', threshold: 0.1 });
-    observer.observe(loadMoreSentinel);
+    loadMoreObserver.observe(loadMoreSentinel);
   }
 
   // ── Helpers ────────────────────────────────────────────────────
@@ -1235,12 +1264,32 @@ const App = (() => {
     btnTranslateTitles.hidden = !state.titleTranslationAvailable || state.sourceType !== 'feed';
   }
 
+  function watchSearchTranslations() {
+    if (!state.search || searchTranslationTimer !== null) return;
+    searchTranslationTimer = setTimeout(async () => {
+      searchTranslationTimer = null;
+      if (!state.search) return;
+      try {
+        const revision = state.translationRevision;
+        const translations = (await API.getStatus())?.title_translations;
+        if (!translations || !state.search) return;
+        if (revision !== null && revision === state.translationRevision && translations.revision !== revision) {
+          await loadItems(true, true);
+        }
+        if (translations.running) watchSearchTranslations();
+      } catch (err) {
+        console.error('check title translations:', err);
+      }
+    }, 1000);
+  }
+
   async function startTitleTranslations() {
     if (state.sourceType !== 'feed') return;
-    if (!confirm('Translate up to 50 unread article titles with AI?')) return;
+    if (!confirm(`Translate up to ${TITLE_TRANSLATION_LIMIT} unread article titles with AI?`)) return;
     btnTranslateTitles.disabled = true;
     try {
-      await API.startTitleTranslations(state.sourceId);
+      const result = await API.startTitleTranslations(state.sourceId);
+      if (result?.accepted) watchSearchTranslations();
     } catch (err) {
       console.error('start title translations:', err);
     } finally {
