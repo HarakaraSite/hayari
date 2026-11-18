@@ -30,6 +30,13 @@
 
 ## Checkpoints
 
+## 2026-11-19 v1.2.9 リリース
+
+- NetNewsWire などの既読・スター更新の一括保存、Web UI の本文遅延取得、未読集計と差分同期の索引を `12defb727e5b056a74cf92c32c0c51c01c57f96e` にコミットした。注釈付き `v1.2.9` と `main` を atomic push した。
+- 候補コミットで `go mod verify`、通常テスト、`go test -race ./...`、`go vet`、JavaScript 構文確認、`git diff --check`、Chromium の API モック E2E が成功した。
+- Forgejo Actions run 23（API run ID 256）でタグと対象 SHA の一致、test・vet、Darwin／Linux／Windows の amd64・arm64 ビルド、チェックサム生成、アセット公開を確認した。[Forgejo Actions run 23](https://forge.harakara.site/littleisland/hayari/actions/runs/23)
+- 公開バイナリ6件と `SHA256SUMS` を取得し、サイズと SHA-256 を照合した。公開 Linux amd64 版で `v1.2.8` のスキーマからの一時 DB 移行、版番号、ヘルスチェック、Cookie ログイン、一覧と本文、件数、両 Reader API の差分同期、1,001件の一括既読、SIGTERM 終了、SQLite の整合性を確認した。[v1.2.9 リリース](https://forge.harakara.site/littleisland/hayari/releases/tag/v1.2.9)
+
 ## 2026-11-19 v1.2.8 リリース
 
 - Codex がフィード更新と記事取得の効率化を `c381e93b443f6f09fb11e2abc273a11d58522d06` にコミットした。このコミットまでの Web UI・FreshRSS 互換修正を含め、注釈付き `v1.2.8` タグと `main` を atomic push した。
