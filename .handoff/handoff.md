@@ -30,6 +30,13 @@
 
 ## Checkpoints
 
+## 2026-11-19 v1.2.8 リリース
+
+- Codex がフィード更新と記事取得の効率化を `c381e93b443f6f09fb11e2abc273a11d58522d06` にコミットした。このコミットまでの Web UI・FreshRSS 互換修正を含め、注釈付き `v1.2.8` タグと `main` を atomic push した。
+- 候補コミットで `go mod verify`、通常テスト、`go test -race ./...`、`go vet`、JavaScript 構文確認、`git diff --check`、Chromium の API モック E2E が成功した。
+- Forgejo Actions run 22（API run ID 255）でタグと対象 SHA の一致、test・vet、Darwin／Linux／Windows の amd64・arm64 ビルド、チェックサム生成、アセット公開を確認した。[Forgejo Actions run 22](https://forge.harakara.site/littleisland/hayari/actions/runs/22)
+- 公開バイナリ6件と `SHA256SUMS` を取得し、全バイナリのサイズと SHA-256 が一致した。公開 Linux amd64 版で版番号、ヘルスチェック、Cookie ログイン、`v1.2.7` スキーマからの一時 DB 移行、検索と件数、両 Reader API の記事取得、SIGTERM 終了、SQLite の整合性を確認した。[v1.2.8 リリース](https://forge.harakara.site/littleisland/hayari/releases/tag/v1.2.8)
+
 ## 2026-10-09 v1.2.7 リリース
 
 - 実行エージェント: Codex
