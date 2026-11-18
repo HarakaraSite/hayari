@@ -28,7 +28,7 @@ const App = (() => {
   const TITLE_TRANSLATION_LIMIT = 50;
   const MAX_UNREAD_BADGE_COUNT = 999;
   const pendingReadUpdates = new Set();
-  let latestItemsRequest = 0;
+  let latestItemsRequest;
   let latestStatsRequest = 0;
   let loadMoreObserver;
   let searchTranslationTimer = null;
@@ -101,24 +101,27 @@ const App = (() => {
     sidebarResizer   = $('#sidebar-resizer');
     itemListResizer  = $('#item-list-resizer');
 
-    const capability = await API.getCapabilities();
+    const [capability] = await Promise.all([API.getCapabilities(), loadSettings()]);
     state.titleTranslationAvailable = !!(capability && capability.title_translation);
-    await Promise.all([loadSidebar(), loadSettings()]);
     updateTitleTranslationButton();
     setupEventListeners();
     setupColumnResizers();
     setupInfiniteScroll();
     setupKeyBindings();
-    await loadItems(true);
+    await loadSidebar({ reloadItems: true });
   }
 
   // ── Sidebar ────────────────────────────────────────────────────
-  async function loadSidebar() {
+  async function loadSidebar({ reloadItems = false } = {}) {
     const [feeds, folders] = await Promise.all([
-      API.getFeeds(), API.getFolders(), loadStats(false),
+      API.getFeeds(), API.getFolders(), reloadItems ? null : loadStats(false),
     ]);
     state.feeds    = feeds   || [];
     state.folders  = folders || [];
+    if (reloadItems) {
+      await loadItems(true, { refreshStats: false });
+      await loadStats(false);
+    }
     renderSidebar();
   }
 
@@ -127,9 +130,14 @@ const App = (() => {
     try {
       const stats = await API.getStats();
       if (!stats || request !== latestStatsRequest) return;
+      const starredView = state.filter === 'starred';
+      const previousCounts = starredView ? state.starStats : state.feedStats;
       state.feedStats = stats.unread || {};
       state.starStats = stats.starred || {};
       if (!updateSidebar || state.filter === 'all') return;
+      const counts = starredView ? state.starStats : state.feedStats;
+      const feeds = Object.keys(previousCounts);
+      if (feeds.length === Object.keys(counts).length && feeds.every(id => previousCounts[id] === counts[id])) return;
       if (state.filter === 'unread' && state.unreadListNeedsRefresh) {
         syncUnreadSidebarCounts();
       } else {
@@ -207,8 +215,6 @@ const App = (() => {
     visibleSidebarFeeds(unfoldered).forEach(feed => {
       feedList.appendChild(makeFeedLi(feed));
     });
-
-    updateActiveSidebarItem();
   }
 
   function visibleSidebarFeeds(feeds) {
@@ -329,11 +335,11 @@ const App = (() => {
     });
   }
 
-  function applyUnreadListRefresh() {
+  function applyUnreadListRefresh(redraw = true) {
     if (state.filter !== 'unread' || !state.unreadListNeedsRefresh) return;
     state.unreadListNeedsRefresh = false;
     ensureVisibleSource();
-    renderSidebar();
+    if (redraw) renderSidebar();
   }
 
   function updateCountBadge(badge, count) {
@@ -354,7 +360,7 @@ const App = (() => {
     });
   }
 
-  function selectSource(type, id, name) {
+  function selectSource(type, id, name, { refreshStats = true } = {}) {
     applyUnreadListRefresh();
     if (type !== state.sourceType || id !== state.sourceId) {
       closeDetail();
@@ -366,11 +372,11 @@ const App = (() => {
     updateTitleTranslationButton();
     updateActiveSidebarItem();
     appEl.classList.remove('show-sidebar'); // mobile: back to the list pane
-    return loadItems(true);
+    return loadItems(true, { refreshStats });
   }
 
-  function selectFilter(filter) {
-    applyUnreadListRefresh();
+  function selectFilter(filter, { reloadItems = true } = {}) {
+    applyUnreadListRefresh(false);
     state.filter = filter;
     ensureVisibleSource();
     // Update tab highlight
@@ -388,14 +394,18 @@ const App = (() => {
     btnMarkAllRead.hidden = (filter !== 'unread');
     appEl.classList.remove('show-sidebar'); // mobile: back to the list pane
     renderSidebar();
-    return loadItems(true);
+    if (reloadItems) return loadItems(true);
   }
 
   // ── Item list ──────────────────────────────────────────────────
-  async function loadItems(reset = true, keepPosition = false) {
+  async function loadItems(reset = true, { refreshStats = true, translationRevision } = {}) {
     if (!reset && (state.loading || !state.nextCursor)) return;
 
-    const request = ++latestItemsRequest;
+    const keepPosition = translationRevision !== undefined;
+    if (keepPosition && state.loading && latestItemsRequest?.translationRevision === translationRevision) return;
+
+    const request = { translationRevision };
+    latestItemsRequest = request;
     if (reset && !keepPosition) {
       state.items = [];
       state.nextCursor = null;
@@ -416,7 +426,7 @@ const App = (() => {
       const revision = translations?.revision ?? null;
       if (!reset && translations && revision !== state.translationRevision) {
         // New search matches can be above the current cursor.
-        return loadItems(true, true);
+        return loadItems(true, { refreshStats, translationRevision: revision });
       }
       const newItems = data?.items || [];
       state.nextCursor = data?.next_cursor || null;
@@ -429,7 +439,7 @@ const App = (() => {
       }
       itemListEmpty.textContent = 'No items';
       itemListEmpty.hidden = state.items.length > 0;
-      loadStats();
+      if (refreshStats) loadStats();
       if (translations?.running) watchSearchTranslations();
       if (state.nextCursor) {
         // Report the new intersection even if the sentinel never left the margin.
@@ -443,7 +453,7 @@ const App = (() => {
       retry.type = 'button';
       retry.className = 'outline small';
       retry.textContent = 'Retry';
-      retry.addEventListener('click', () => loadItems(reset, keepPosition));
+      retry.addEventListener('click', () => loadItems(reset, { translationRevision }));
       itemListEmpty.textContent = reset ? 'Failed to load items. ' : 'Failed to load more items. ';
       itemListEmpty.appendChild(retry);
       itemListEmpty.hidden = false;
@@ -640,7 +650,7 @@ const App = (() => {
 
     if (state.filter === 'starred') {
       if (ensureVisibleSource()) renderSidebar();
-      await loadItems(true);
+      await loadItems(true, { refreshStats: false });
     }
   }
 
@@ -795,11 +805,11 @@ const App = (() => {
       const feed = await API.createFeed(url, folderID);
       modalAddFeed.close();
       await loadSidebar();
-		if ((state.filter === 'unread' && (state.feedStats[feed.id] || 0) === 0) ||
-		    (state.filter === 'starred' && (state.starStats[feed.id] || 0) === 0)) {
-		  await selectFilter('all');
-		}
-		selectSource('feed', feed.id, feed.title || feed.feed_url);
+      if ((state.filter === 'unread' && (state.feedStats[feed.id] || 0) === 0) ||
+          (state.filter === 'starred' && (state.starStats[feed.id] || 0) === 0)) {
+        selectFilter('all', { reloadItems: false });
+      }
+      await selectSource('feed', feed.id, feed.title || feed.feed_url, { refreshStats: false });
     } catch (err) {
       alert('Error: ' + err.message);
     } finally {
@@ -850,16 +860,14 @@ const App = (() => {
 		payload.title_filter_keywords = data.title_filter_keywords;
       await API.updateFeed(feedId, payload);
       modalManage.close();
-      await loadSidebar();
-		await loadItems(true);
+      await loadSidebar({ reloadItems: true });
     });
 
     modalManageBody.querySelector('#btn-do-delete-feed').addEventListener('click', async () => {
       if (!confirm(`Delete "${feed.title || feed.feed_url}"?`)) return;
       await API.deleteFeed(feedId);
       modalManage.close();
-      await loadSidebar();
-      await loadItems(true);
+      await loadSidebar({ reloadItems: true });
     });
 
     modalManage.showModal();
@@ -1039,8 +1047,7 @@ const App = (() => {
     try {
       const result = await API.importOPML(text);
       alert(`Imported ${result.imported} feed(s).`);
-      await loadSidebar();
-      await loadItems(true);
+      await loadSidebar({ reloadItems: true });
     } catch (err) {
       alert('Import failed: ' + err.message);
     }
@@ -1066,8 +1073,7 @@ const App = (() => {
           status = await API.getStatus();
         }
         if (!status) return;
-        await loadSidebar();
-        await loadItems(true);
+        await loadSidebar({ reloadItems: true });
       } catch (err) {
         alert('Refresh failed: ' + err.message);
       } finally {
@@ -1274,7 +1280,7 @@ const App = (() => {
         const translations = (await API.getStatus())?.title_translations;
         if (!translations || !state.search) return;
         if (revision !== null && revision === state.translationRevision && translations.revision !== revision) {
-          await loadItems(true, true);
+          await loadItems(true, { translationRevision: translations.revision });
         }
         if (translations.running) watchSearchTranslations();
       } catch (err) {

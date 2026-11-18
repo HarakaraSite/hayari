@@ -316,7 +316,7 @@ func TestItemsCursorAfterMarkRead(t *testing.T) {
 
 	getPage := func(path string) (page struct {
 		Items      []storage.Item `json:"items"`
-		Total      int            `json:"total"`
+		Total      *int           `json:"total"`
 		NextCursor string         `json:"next_cursor"`
 	}) {
 		t.Helper()
@@ -333,8 +333,12 @@ func TestItemsCursorAfterMarkRead(t *testing.T) {
 
 	path := fmt.Sprintf("/api/items?status=unread&feed_id=%d&limit=2", feed.ID)
 	first := getPage(path)
-	if len(first.Items) != 2 || first.Total != 3 || first.NextCursor == "" {
+	if len(first.Items) != 2 || first.Total == nil || *first.Total != 3 || first.NextCursor == "" {
 		t.Fatalf("first page = %+v", first)
+	}
+	withoutTotal := getPage(path + "&include_total=0")
+	if len(withoutTotal.Items) != 2 || withoutTotal.Total != nil || withoutTotal.NextCursor != first.NextCursor {
+		t.Fatalf("first page without total = %+v", withoutTotal)
 	}
 	// Reading the last item of page one removes it from the unread query.
 	id := first.Items[1].ID
@@ -345,11 +349,11 @@ func TestItemsCursorAfterMarkRead(t *testing.T) {
 	}
 
 	second := getPage(path + "&cursor=" + url.QueryEscape(first.NextCursor))
-	if len(second.Items) != 1 || second.Items[0].ID != items[2].ID || second.Total != 2 || second.NextCursor != "" {
+	if len(second.Items) != 1 || second.Items[0].ID != items[2].ID || second.Total == nil || *second.Total != 2 || second.NextCursor != "" {
 		t.Fatalf("second page = %+v, want only item %d and total 2", second, items[2].ID)
 	}
 	offset := getPage(path + "&offset=1")
-	if len(offset.Items) != 1 || offset.Items[0].ID != items[2].ID || offset.Total != 2 {
+	if len(offset.Items) != 1 || offset.Items[0].ID != items[2].ID || offset.Total == nil || *offset.Total != 2 {
 		t.Fatalf("offset page = %+v, want only item %d and total 2", offset, items[2].ID)
 	}
 }

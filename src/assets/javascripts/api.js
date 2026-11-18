@@ -42,9 +42,9 @@ const API = (() => {
   // Items
   const getItems = (params) => {
     const qs = new URLSearchParams(
-      Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+      Object.fromEntries(Object.entries({ ...params, include_total: 0 }).filter(([, v]) => v != null && v !== ''))
     ).toString();
-    return request('GET', `/api/items${qs ? '?' + qs : ''}`);
+    return request('GET', `/api/items?${qs}`);
   };
   const updateItem  = (id, data)  => request('PUT',  `/api/items/${id}`, data);
   const markAllRead = (params)    => {

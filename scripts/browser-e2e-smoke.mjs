@@ -152,10 +152,13 @@ async function main() {
     const badResponses = [];
     const assetStatus = new Map();
     const apiCalls = [];
+    const feeds = [...FEEDS];
     let refreshRunning = false;
     const translationStatus = { running: false, revision: 0 };
     let firstPageGate;
     let readGate;
+    let translationStatusGate;
+    let translatedSearchGate;
     page.on('console', (msg) => {
       if (msg.type() === 'error') errors.push(msg.text());
     });
@@ -179,6 +182,7 @@ async function main() {
       const noContent = () => route.fulfill({ status: 204, body: '' });
 
       if (path === '/api/status') {
+        if (translationStatusGate) await translationStatusGate;
         return ok({ running: refreshRunning, version: 'e2e', title_translations: translationStatus });
       }
       if (path === '/api/capabilities') return ok({ title_translation: true });
@@ -188,7 +192,15 @@ async function main() {
           : ok({ theme: 'light', font_size: 'medium', refresh_rate: '30', item_max_age_days: '30' });
       }
       if (path === '/api/folders') return ok(FOLDERS);
-      if (path === '/api/feeds') return ok(FEEDS);
+      if (path === '/api/feeds/find') return ok([]);
+      if (path === '/api/feeds') {
+        if (req.method() === 'POST') {
+          const feed = { id: 3, title: 'New empty feed', feed_url: req.postDataJSON().url };
+          feeds.push(feed);
+          return ok(feed);
+        }
+        return ok(feeds);
+      }
       if (path === '/api/feeds/refresh' && req.method() === 'POST') {
         refreshRunning = true;
         return route.fulfill({ status: 202, body: '' });
@@ -214,6 +226,9 @@ async function main() {
       if (path === '/api/items' && req.method() === 'GET') {
         const q = url.searchParams;
         if (firstPageGate && !q.has('cursor')) await firstPageGate;
+        if (translatedSearchGate && q.get('search') && Number(q.get('limit')) > 40) {
+          await translatedSearchGate;
+        }
         let items = allItems;
         if (q.get('feed_id')) items = items.filter((it) => it.feed_id === Number(q.get('feed_id')));
         if (q.get('folder_id')) items = items.filter((it) => it.feed_id === Number(q.get('folder_id')));
@@ -228,7 +243,8 @@ async function main() {
         const limit = Number(q.get('limit') || 40);
         const nextCursor = remaining.length > limit ? String(remaining[limit - 1].id) : undefined;
         return ok({
-          items: remaining.slice(0, limit), total: items.length, next_cursor: nextCursor,
+          items: remaining.slice(0, limit), next_cursor: nextCursor,
+          total: q.get('include_total') === '0' ? undefined : items.length,
           title_translations: search ? translationStatus : undefined,
         });
       }
@@ -259,6 +275,7 @@ async function main() {
     assert(await page.locator('#feed-list .feed-row').count() === 2, 'sidebar feed rows');
     assert(await page.locator('#feed-list .folder-header').count() === 1, 'unread view hides empty folder');
     assert(await page.locator('.sidebar-count-badge').count() > 0, 'sidebar count badges');
+    assert(apiCalls.filter(c => c.path === '/api/stats').length === 1, 'startup requests counts once');
 
     // The All view brings the empty folder back.
     await page.click('#status-tabs button[data-filter="all"]');
@@ -378,6 +395,7 @@ async function main() {
     await waitFor(async () => await page.locator('#btn-refresh').isEnabled(), 'refresh completes');
     assert(await page.locator('[data-feed-id="1"] .sidebar-count-badge').textContent() === '45', 'badge includes the new article');
     assert(await page.locator('#item-list .item-entry').first().getAttribute('data-item-id') === '99', 'list includes the new article');
+    assert(apiCalls.slice(beforeRefresh).filter(c => c.path === '/api/stats').length === 1, 'refresh requests counts once');
 
     // 11. Selecting a feed again includes articles saved while the page was open.
     allItems.unshift(makeItem(97, 1));
@@ -438,8 +456,15 @@ async function main() {
     await page.locator('#btn-translate-titles').click();
     await waitFor(() => translationStatus.running, 'search translation started');
     const list = page.locator('#item-list');
+    const feedRow = page.locator('[data-feed-id="1"] .feed-row');
+    const beforeScrollRow = await feedRow.elementHandle();
+    const scrollStats = page.waitForResponse(response => new URL(response.url()).pathname === '/api/stats');
     await list.evaluate(el => { el.scrollTop = el.scrollHeight; });
     await waitFor(async () => (await searchRows.count()) === translatedMatches.length - 4, 'all original matches');
+    await (await scrollStats).finished();
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert(await feedRow.evaluate((row, previous) => row === previous, beforeScrollRow), 'unchanged counts preserve the sidebar DOM');
+    await beforeScrollRow.dispose();
     await list.evaluate(el => { el.scrollTop = el.scrollHeight; });
     const firstVisible = () => list.evaluate(el => {
       const top = el.getBoundingClientRect().top;
@@ -456,7 +481,56 @@ async function main() {
     assert(await searchRows.first().getAttribute('data-item-id') === String(newMatches[0].id), 'new matches sort first');
     assert(await firstVisible() === anchor, 'first visible article is preserved');
 
-    // 14. No broken assets and no console errors.
+    // 14. A status response and a subsequent page can observe the same translation revision.
+    translationStatus.running = true;
+    let releaseStatus;
+    let releaseSearch;
+    translationStatusGate = new Promise(resolve => { releaseStatus = resolve; });
+    translatedSearchGate = new Promise(resolve => { releaseSearch = resolve; });
+    try {
+      const beforeOverlap = apiCalls.length;
+      await feedRow.click();
+      await waitFor(async () => (await searchRows.count()) === 40, 'fresh first search page');
+      await waitFor(() => apiCalls.slice(beforeOverlap).some(c => c.path === '/api/status'), 'translation status pending');
+      translationStatus.revision++;
+      translationStatus.running = false;
+      await list.evaluate(el => { el.scrollTop = el.scrollHeight; });
+      const searchReloads = () => apiCalls.slice(beforeOverlap).filter(c =>
+        c.path === '/api/items' && Number(new URLSearchParams(c.search).get('limit')) > 40);
+      await waitFor(() => searchReloads().length > 0, 'scroll detects the new revision');
+
+      const statusResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/status');
+      releaseStatus();
+      await (await statusResponse).finished();
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      releaseSearch();
+      await waitFor(async () => (await searchRows.count()) === translatedMatches.length, 'all matches once');
+      assert(searchReloads().length === 1, 'status and paging share a single search reload');
+    } finally {
+      releaseStatus();
+      releaseSearch();
+      translationStatusGate = null;
+      translatedSearchGate = null;
+    }
+
+    // 15. Subscribing to an empty feed selects it without fetching the previous scope.
+    await page.locator('#search-input').fill('');
+    await waitFor(async () => (await searchRows.count()) === 40, 'cleared search');
+    const beforeSubscribe = apiCalls.length;
+    await page.click('#btn-add-feed');
+    await page.locator('#input-feed-url').fill('https://example.invalid/empty.xml');
+    await page.click('#btn-feed-submit');
+    await waitFor(async () =>
+      await page.locator('#item-list-title').textContent() === 'New empty feed' &&
+      await page.locator('#item-list-empty').isVisible(), 'new feed selected and empty');
+    const subscribeCalls = apiCalls.slice(beforeSubscribe);
+    const subscribeItems = subscribeCalls.filter(c => c.path === '/api/items');
+    assert(subscribeItems.length === 1 && new URLSearchParams(subscribeItems[0].search).get('feed_id') === '3', 'subscribe requests only the new feed');
+    assert(subscribeCalls.filter(c => c.path === '/api/stats').length === 1, 'subscribe requests counts once');
+    assert(await page.locator('#status-tabs button[data-filter="all"]').evaluate(el => el.classList.contains('active')), 'empty subscription is shown in All');
+
+    // 16. No broken assets and no console errors.
+    assert(apiCalls.filter(c => c.path === '/api/items').every(c => new URLSearchParams(c.search).get('include_total') === '0'), 'Web UI skips the full result count');
     for (const asset of ASSETS) {
       assert(assetStatus.get(asset) === 200, `${asset} → ${assetStatus.get(asset)}`);
     }

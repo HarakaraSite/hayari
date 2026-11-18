@@ -479,12 +479,15 @@ func (s *Server) handleItems(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err, 500)
 		return
 	}
-	total, err := s.db.CountItems(filter)
-	if err != nil {
-		httpError(w, err, 500)
-		return
+	response := map[string]interface{}{}
+	if q.Get("include_total") != "0" {
+		total, err := s.db.CountItems(filter)
+		if err != nil {
+			httpError(w, err, 500)
+			return
+		}
+		response["total"] = total
 	}
-	response := map[string]interface{}{"total": total}
 	if filter.Search != "" {
 		current := s.translations.Status()
 		if current.Running || current.Revision != translationStatus.Revision {
