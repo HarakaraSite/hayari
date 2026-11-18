@@ -26,15 +26,18 @@ type Item struct {
 }
 
 type ItemFilter struct {
-	Status      string
-	Starred     *bool
-	FeedID      *int64
-	FolderID    *int64
-	Search      string
-	After       *time.Time // i.date >= After  (GReader ot= param: items after this time)
-	Before      *time.Time // i.date <= Before (GReader mark-all-as-read ts= param)
-	OldestFirst bool       // ORDER BY date ASC; default is DESC (newest first)
-	Cursor      *ItemCursor
+	Status       string
+	Starred      *bool
+	FeedID       *int64
+	FolderID     *int64
+	Search       string
+	StoredAfter  *time.Time // GReader ot= lower bound
+	StoredBefore *time.Time // GReader nt= upper bound
+	Before       *time.Time // i.date <= Before (GReader mark-all-as-read ts= param)
+	OldestFirst  bool       // ORDER BY date ASC; default is DESC (newest first)
+	OrderByID    bool       // FreshRSS uses article IDs for ordering and continuation.
+	Cursor       *ItemCursor
+	NoMatch      bool
 }
 
 // ItemCursor identifies the final item from the previous page.
@@ -45,6 +48,9 @@ type ItemCursor struct {
 
 // where builds the WHERE clause for non-search filters.
 func (f ItemFilter) where() (string, []interface{}) {
+	if f.NoMatch {
+		return "WHERE 0", nil
+	}
 	clauses := []string{"i.hidden = 0"}
 	var args []interface{}
 
@@ -67,21 +73,35 @@ func (f ItemFilter) where() (string, []interface{}) {
 		clauses = append(clauses, "f.folder_id = ?")
 		args = append(args, *f.FolderID)
 	}
-	if f.After != nil {
-		clauses = append(clauses, "i.date >= ?")
-		args = append(args, f.After.UTC().Format(time.RFC3339Nano))
+	// Existing databases did not record when an article was first stored.
+	const storedAt = "COALESCE(i.stored_at, unixepoch(i.date))"
+	if f.StoredAfter != nil {
+		clauses = append(clauses, storedAt+" >= ?")
+		args = append(args, f.StoredAfter.Unix())
+	}
+	if f.StoredBefore != nil {
+		clauses = append(clauses, storedAt+" <= ?")
+		args = append(args, f.StoredBefore.Unix())
 	}
 	if f.Before != nil {
 		clauses = append(clauses, "i.date <= ?")
 		args = append(args, f.Before.UTC().Format(time.RFC3339Nano))
 	}
 	if f.Cursor != nil {
-		if f.OldestFirst {
+		switch {
+		case f.OrderByID && f.OldestFirst:
+			clauses = append(clauses, "i.id > ?")
+			args = append(args, f.Cursor.ID)
+		case f.OrderByID:
+			clauses = append(clauses, "i.id < ?")
+			args = append(args, f.Cursor.ID)
+		case f.OldestFirst:
 			clauses = append(clauses, "(i.date > ? OR (i.date = ? AND i.id > ?))")
-		} else {
+			args = append(args, f.Cursor.Date, f.Cursor.Date, f.Cursor.ID)
+		default:
 			clauses = append(clauses, "(i.date < ? OR (i.date = ? AND i.id < ?))")
+			args = append(args, f.Cursor.Date, f.Cursor.Date, f.Cursor.ID)
 		}
-		args = append(args, f.Cursor.Date, f.Cursor.Date, f.Cursor.ID)
 	}
 
 	if len(clauses) == 0 {
@@ -108,7 +128,11 @@ func (s *Storage) ListItems(filter ItemFilter, limit, offset int) ([]Item, error
 	if filter.OldestFirst {
 		order = "ASC"
 	}
-	query, args := s.buildItemQuery(filter, fmt.Sprintf("ORDER BY i.date %s, i.id %s\nLIMIT ? OFFSET ?", order, order))
+	sort := "i.id " + order
+	if !filter.OrderByID {
+		sort = "i.date " + order + ", " + sort
+	}
+	query, args := s.buildItemQuery(filter, "ORDER BY "+sort+"\nLIMIT ? OFFSET ?")
 	args = append(args, limit, offset)
 
 	rows, err := s.db.Query(query, args...)
@@ -167,8 +191,8 @@ func (s *Storage) CreateItems(items []Item) error {
 	defer tx.Rollback()
 
 	insertItem, err := tx.Prepare(`
-		INSERT INTO items (feed_id, guid, title, link, date, content, author, image, status, hidden)
-		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+		INSERT INTO items (id, feed_id, guid, title, link, date, content, author, image, status, hidden, stored_at)
+		SELECT (SELECT last_id + 1 FROM item_id_sequence), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 		WHERE NOT EXISTS (
 			SELECT 1 FROM items
 			WHERE feed_id = ? AND (guid = ? OR (? <> '' AND link = ?))
@@ -185,6 +209,7 @@ func (s *Storage) CreateItems(items []Item) error {
 	}
 	defer insertSearch.Close()
 	keywordsByFeed := make(map[int64]string)
+	storedAt := time.Now().Unix()
 
 	for _, item := range items {
 		keywords, ok := keywordsByFeed[item.FeedID]
@@ -200,7 +225,7 @@ func (s *Storage) CreateItems(items []Item) error {
 			status = "unread"
 		}
 		res, err := insertItem.Exec(item.FeedID, item.GUID, item.Title, item.Link,
-			item.Date.UTC().Format(time.RFC3339Nano), item.Content, item.Author, item.Image, status, item.Hidden,
+			item.Date.UTC().Format(time.RFC3339Nano), item.Content, item.Author, item.Image, status, item.Hidden, storedAt,
 			item.FeedID, item.GUID, item.Link, item.Link)
 		if err != nil {
 			return err

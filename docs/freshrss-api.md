@@ -6,10 +6,8 @@ Hayari implements a Google Reader API compatibility subset based on FreshRSS's
 `greader.php`. It is not a complete implementation of either the FreshRSS API
 or the historical Google Reader API.
 
-The implemented scope follows the operations required by the verified ReadKit
-and NetNewsWire synchronization workflows. Endpoints such as `rename-tag` and
-`disable-tag`, which are outside those workflows, are not implemented. The
-endpoint list in this document is authoritative.
+The endpoint list below covers the ReadKit and NetNewsWire synchronization
+workflows and the supported folder and subscription operations.
 
 ## API entry points
 
@@ -138,8 +136,9 @@ item returned.
 ```
 
 `stream/items/contents` accepts both decimal IDs and tagged hexadecimal IDs.
-The opaque cursor used internally by `stream/contents` includes a timestamp and
-an ID, and is separate from the decimal `stream/items/ids` continuation.
+`stream/contents` and `stream/items/ids` paginate in article-ID order with
+decimal continuations. `stream/contents` also accepts older Hayari date-and-ID
+cursors and continues those pages in publication-date order.
 
 ---
 
@@ -268,11 +267,11 @@ Returns items in a stream.
 |---|---:|---:|---|
 | `n` | integer | 20 | number of items; roughly 1000 maximum |
 | `c` | string | — | pagination continuation |
-| `ot` | integer | — | include items from this Unix second |
-| `nt` | integer | — | include items through this Unix second |
-| `it` | string | — | include items with this tag |
-| `xt` | string | — | exclude items with this tag |
-| `r` | string | — | `d`/`n` newest first; `o` oldest first |
+| `ot` | integer | — | include items first stored at or after this Unix second |
+| `nt` | integer | — | include items first stored at or before this Unix second |
+| `it` | string | — | include items in this read, unread, or starred state |
+| `xt` | string | — | exclude items in this read, unread, or starred state |
+| `r` | string | — | `d`/`n` descending article IDs, `o` ascending article IDs |
 | `output` | string | `json` | response format |
 
 The JSON response contains `id`, `updated`, `items`, and, when more items are
@@ -280,10 +279,13 @@ available, `continuation`. Each item contains its tagged ID, title, author,
 publication timestamps, categories, HTML summary and content, canonical and
 alternate links, and origin feed metadata.
 
-Item categories always include `user/-/state/com.google/reading-list`; they add
+Rows from older databases use their publication time when no first-storage time
+was recorded. Use a percent-encoded URL for the URL segment in a
+`stream/contents/feed/<feed-url>` path.
+
+Item categories always include `user/-/state/com.google/reading-list`. They add
 `read`, `starred`, and a folder label when applicable. The continuation is the
-decimal ID of the last returned item and is sent only when the result reaches
-the requested item count.
+decimal ID of the last returned item when another page is available.
 
 ### `GET /reader/api/0/stream/items/ids`
 
@@ -349,28 +351,27 @@ Marks all items in a stream as read.
 | Form parameter | Meaning |
 |---|---|
 | `T` | CSRF token |
-| `s` | required stream ID |
-| `ts` | optional inclusive upper bound as a nanosecond Unix timestamp |
+| `s` | exactly one stream ID |
+| `ts` | inclusive publication-time cutoff in Unix nanoseconds, omitted or `0` to mark the whole stream |
 
 ```text
 s=feed/12345&ts=1623456789000000000
 ```
 
-Response: `OK` (`text/plain`). Supported streams include feeds, labels, and the
-reading list.
+Success returns `OK` (`text/plain`). Supported streams include feeds, labels,
+and the fully qualified reading list ID. An unknown label, an unsupported
+stream, or an invalid cutoff returns HTTP 400.
 
-### Not implemented
+### Folder management and OPML import
 
-The following FreshRSS endpoints are not implemented. They are not part of the
-verified client workflows and must not be treated as compatibility guarantees.
+- `POST /reader/api/0/rename-tag` accepts form fields `s=user/-/label/Old` and `dest=user/-/label/New`.
+- `POST /reader/api/0/disable-tag` accepts `s=user/-/label/Name` and moves subscriptions in the removed folder to the uncategorized list.
+- `POST /reader/api/0/subscription/import` accepts raw OPML XML up to 4 MiB, for example with `Content-Type: text/xml`.
 
-- `POST /reader/api/0/rename-tag` — rename a label
-- `POST /reader/api/0/disable-tag` — remove a label
-- `GET /reader/api/0/subscription/export` — export OPML
-- `POST /reader/api/0/subscription/import` — import OPML
+Each operation returns `OK` on success. Send form values with URL encoding.
 
-Hayari provides OPML import and export for the Web UI through its own
-authenticated `/opml/import` and `/opml/export` endpoints instead.
+OPML export is available through the Web UI's authenticated `/opml/export`
+endpoint.
 
 ---
 
@@ -407,12 +408,15 @@ client requires it.
 | `GET /reader/api/0/subscription/list` | feed list |
 | `POST /reader/api/0/subscription/edit` | add, remove, or edit feeds |
 | `POST /reader/api/0/subscription/quickadd` | subscribe by URL |
+| `POST /reader/api/0/subscription/import` | import OPML |
 | `GET /reader/api/0/tag/list` | labels and folders |
 | `GET /reader/api/0/unread-count` | unread counts |
 | `GET /reader/api/0/stream/contents/{stream-id}` | retrieve items |
 | `GET /reader/api/0/stream/items/ids` | retrieve item IDs |
 | `POST /reader/api/0/stream/items/contents` | retrieve full item content |
 | `POST /reader/api/0/edit-tag` | update read and starred state |
+| `POST /reader/api/0/rename-tag` | rename a folder label |
+| `POST /reader/api/0/disable-tag` | remove a folder label |
 | `POST /reader/api/0/mark-all-as-read` | mark a stream as read |
 
 Prefix any of the paths above with `/api/greader.php` to use the FreshRSS URL

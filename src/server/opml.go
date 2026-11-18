@@ -43,25 +43,31 @@ func (s *Server) handleOPMLImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := io.ReadAll(io.LimitReader(r.Body, 4<<20)) // 4MB limit
+	outlines, err := readOPMLOutlines(r.Body)
 	if err != nil {
 		httpError(w, err, 400)
 		return
 	}
 
-	var doc opmlDoc
-	if err := xml.Unmarshal(body, &doc); err != nil {
-		httpError(w, err, 400)
-		return
-	}
-
-	imported, err := s.importOutlines(doc.Body.Outlines, nil)
+	imported, err := s.importOutlines(outlines, nil)
 	if err != nil {
 		httpError(w, err, 500)
 		return
 	}
 
 	writeJSON(w, map[string]int{"imported": imported})
+}
+
+func readOPMLOutlines(r io.Reader) ([]opmlOutline, error) {
+	body, err := io.ReadAll(io.LimitReader(r, 4<<20)) // 4MB limit
+	if err != nil {
+		return nil, err
+	}
+	var doc opmlDoc
+	if err := xml.Unmarshal(body, &doc); err != nil {
+		return nil, err
+	}
+	return doc.Body.Outlines, nil
 }
 
 // importOutlines recursively creates folders and feeds from OPML outlines.

@@ -1,5 +1,7 @@
 package storage
 
+import "database/sql"
+
 type Folder struct {
 	ID         int64  `json:"id"`
 	Title      string `json:"title"`
@@ -44,12 +46,19 @@ func (s *Storage) GetFolderByTitle(title string) (*Folder, error) {
 	return f, nil
 }
 
+func (s *Storage) GetUniqueFolderIDByTitle(title string) (int64, error) {
+	var id int64
+	err := s.db.QueryRow("SELECT MIN(id) FROM folders WHERE title = ? HAVING COUNT(*) = 1", title).Scan(&id)
+	return id, err
+}
+
 func (s *Storage) GetOrCreateFolder(title string) (*Folder, error) {
-	f, err := s.GetFolderByTitle(title)
-	if err == nil {
-		return f, nil
+	if _, err := s.db.Exec(`
+		INSERT INTO folders (title)
+		SELECT ? WHERE NOT EXISTS (SELECT 1 FROM folders WHERE title = ?)`, title, title); err != nil {
+		return nil, err
 	}
-	return s.CreateFolder(title)
+	return s.GetFolderByTitle(title)
 }
 
 func (s *Storage) CreateFolder(title string) (*Folder, error) {
@@ -74,4 +83,37 @@ func (s *Storage) UpdateFolderExpanded(id int64, isExpanded bool) error {
 func (s *Storage) DeleteFolder(id int64) error {
 	_, err := s.db.Exec("DELETE FROM folders WHERE id = ?", id)
 	return err
+}
+
+// RenameFolderByTitle identifies the folder by its Reader API label and avoids
+// assigning the same label to another folder.
+func (s *Storage) RenameFolderByTitle(oldTitle, title string) error {
+	result, err := s.db.Exec(`
+		UPDATE folders AS folder SET title = ?
+		WHERE id = (SELECT MIN(id) FROM folders WHERE title = ? HAVING COUNT(*) = 1)
+		AND NOT EXISTS (SELECT 1 FROM folders WHERE title = ? AND id <> folder.id)`, title, oldTitle, title)
+	return requireFolderChange(result, err)
+}
+
+// DeleteFolderByTitle removes the label. The foreign key moves subscriptions
+// into the uncategorized list while keeping their articles.
+func (s *Storage) DeleteFolderByTitle(title string) error {
+	result, err := s.db.Exec(`
+		DELETE FROM folders
+		WHERE id = (SELECT MIN(id) FROM folders WHERE title = ? HAVING COUNT(*) = 1)`, title)
+	return requireFolderChange(result, err)
+}
+
+func requireFolderChange(result sql.Result, err error) error {
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }

@@ -515,6 +515,58 @@ func TestItemCRUD(t *testing.T) {
 	}
 }
 
+func TestItemStorageTimeWithLegacyDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := &Storage{db: db}
+	t.Cleanup(func() { db.Close() })
+	if _, err := db.Exec("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY)"); err != nil {
+		t.Fatal(err)
+	}
+	for i, statement := range migrations[:31] {
+		if err := legacy.applyMigration(i, statement); err != nil {
+			t.Fatalf("migration %d: %v", i, err)
+		}
+	}
+	feed, err := legacy.CreateFeed("https://example.com/old.xml", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldDate := time.Now().Add(-48 * time.Hour).UTC()
+	if _, err := db.Exec("INSERT INTO items (feed_id, guid, title, date) VALUES (?, 'old', 'Old', ?)",
+		feed.ID, oldDate.Format(time.RFC3339Nano)); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	current, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { current.Close() })
+	if err := current.CreateItems([]Item{{FeedID: feed.ID, GUID: "new", Title: "New", Date: oldDate}}); err != nil {
+		t.Fatal(err)
+	}
+	cutoff := time.Now().Add(-time.Hour)
+	for _, tc := range []struct {
+		filter ItemFilter
+		title  string
+	}{
+		{ItemFilter{StoredAfter: &cutoff}, "New"},
+		{ItemFilter{StoredBefore: &cutoff}, "Old"},
+	} {
+		items, err := current.ListItems(tc.filter, 10, 0)
+		if err != nil || len(items) != 1 || items[0].Title != tc.title {
+			t.Errorf("storage time filter %+v = %+v, %v, want %q", tc.filter, items, err, tc.title)
+		}
+	}
+}
+
 func TestUpdateItemStatusRejectsInvalidValue(t *testing.T) {
 	s := newTestDB(t)
 	f, err := s.CreateFeed("https://example.com/feed.xml", nil)

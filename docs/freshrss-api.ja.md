@@ -6,10 +6,8 @@ hayari が実装するのは、FreshRSS の `greader.php` を基準にした Goo
 の互換サブセットである。完全な FreshRSS API または完全な Google Reader API の実装
 ではない。
 
-実装済みの範囲は、ReadKit と NetNewsWire が実際の同期で要求した操作を基準にして
-いる。`rename-tag` と `disable-tag` など、確認済みのクライアントワークフローが
-要求しないエンドポイントは未実装である。対応状況はこの文書のエンドポイント一覧を
-正とする。
+下のエンドポイント一覧には、ReadKit と NetNewsWire の基本同期と、対応している
+フォルダ・購読管理の操作を記載する。
 
 ## API の入口
 
@@ -158,7 +156,9 @@ id, err := strconv.ParseInt(hex, 16, 64)
 
 NetNewsWire はこの10進IDを受け、本文取得時に `tag:google.com,2005:reader/item/<16桁hex>` へ変換する。`stream/items/contents` は、10進IDとこのタグ付き16進IDの両方を受け入れる。
 
-`stream/contents` の内部ページングには日時とIDを含む不透明なカーソルを使うため、`stream/items/ids` の10進継続トークンとは別物である。
+`stream/contents` と `stream/items/ids` は記事 ID 順にページ送りし、10進の継続トークンを返す。
+`stream/contents` は以前の Hayari が発行した日時と ID のトークンも受け付け、その場合は
+公開日時順で続きを返す。
 
 ---
 
@@ -314,12 +314,15 @@ ac=edit&s=feed/12345&t=New+Title&a=user/-/label/NewFolder&r=user/-/label/OldFold
 |---|---|---|---|
 | `n` | int | 20 | 取得件数（最大 1000 程度） |
 | `c` | string | - | Continuation トークン（ページネーション） |
-| `ot` | int | - | この Unix 秒以降のアイテムのみ |
-| `nt` | int | - | この Unix 秒以前のアイテムのみ |
-| `it` | string | - | このタグを持つアイテムのみ |
-| `xt` | string | - | このタグを持つアイテムを除外 |
-| `r` | string | - | ソート: `d`/`n`=新着順, `o`=古い順 |
+| `ot` | int | - | この Unix 秒以降に初回保存された記事 |
+| `nt` | int | - | この Unix 秒以前に初回保存された記事 |
+| `it` | string | - | 既読、未読、スター付きのうち指定した状態の記事を含める |
+| `xt` | string | - | 既読、未読、スター付きのうち指定した状態の記事を除外する |
+| `r` | string | - | `d`/`n` は記事 ID の降順、`o` は昇順 |
 | `output` | string | json | 出力形式 |
+
+初回保存時刻が未記録の既存記事には公開日時を使う。パスの `feed/<feed-url>` に
+フィード URL を指定する場合は、URL 部分をパーセントエンコードする。
 
 **レスポンス (JSON)**
 ```json
@@ -373,7 +376,7 @@ ac=edit&s=feed/12345&t=New+Title&a=user/-/label/NewFolder&r=user/-/label/OldFold
 - 所属フォルダがあれば `user/-/label/<name>` を追加
 
 **continuation**
-- 返したアイテム数がリクエストした `n` 以上の場合のみ含める
+- 次のページがある場合に含める
 - 値は最後のアイテムの ID（10進数文字列）
 
 ---
@@ -455,8 +458,8 @@ Stream 内の全アイテムを一括既読。
 
 **リクエスト (form data)**
 - `T` — CSRF トークン
-- `s` — Stream ID（必須）
-- `ts` — この **ナノ秒** タイムスタンプ以前のアイテムのみ対象（省略時は全件）
+- `s` — Stream ID を1つ指定する
+- `ts` — 公開日時の上限を Unix ナノ秒で指定する。省略または `0` でストリーム全体を対象にする
 
 ```
 s=feed/12345&ts=1623456789000000000
@@ -466,16 +469,14 @@ s=feed/12345&ts=1623456789000000000
 
 **注意**
 - `ts` はナノ秒（Unix秒 × 1,000,000,000）
-- 対応 Stream: feed/\<id\>, user/-/label/\<name\>, user/-/state/com.google/reading-list 等
+- 対応ストリームには `feed/<id>`、`user/-/label/<name>`、完全修飾の `user/-/state/com.google/reading-list` などがある。
+- 存在しないフォルダ名、未対応のストリーム、不正な日時指定には HTTP 400 を返す。
 
 ---
 
 ### 補助エンドポイント
 
-#### 未実装
-
-以下は FreshRSS にはあるが、hayari では現時点で未実装。確認済みのクライアント
-ワークフローでは要求されていないため、クライアント互換の根拠として扱わない。
+#### フォルダ管理と OPML 取り込み
 
 **POST /reader/api/0/rename-tag** — ラベル名変更
 ```
@@ -489,12 +490,12 @@ T=<token>&s=user/-/label/LabelName
 ```
 レスポンス: `OK`
 
-**GET /reader/api/0/subscription/export** — OPML エクスポート
+フォーム値は URL エンコードする。削除したフォルダ内の購読は、記事とともにフォルダ未所属へ移る。
 
 **POST /reader/api/0/subscription/import** — OPML インポート
 
-上記の OPML API は未実装。Hayari の Web UI 用には、認証付きの独自エンドポイント
-`/opml/export` と `/opml/import` を提供する。
+本文には4 MiBまでの OPML XML を送る。たとえば `Content-Type: text/xml` を使用する。
+成功時は `OK` を返す。OPML エクスポートは Web UI 用の `/opml/export` から利用できる。
 
 #### 実装済み: POST /reader/api/0/subscription/quickadd
 
@@ -565,12 +566,16 @@ Access-Control-Max-Age: 600
 | `GET /reader/api/0/user-info` | ユーザー情報 |
 | `GET /reader/api/0/subscription/list` | フィード一覧 |
 | `POST /reader/api/0/subscription/edit` | フィード追加/削除/編集 |
+| `POST /reader/api/0/subscription/quickadd` | URL から購読 |
+| `POST /reader/api/0/subscription/import` | OPML 取り込み |
 | `GET /reader/api/0/tag/list` | ラベル/フォルダ一覧 |
 | `GET /reader/api/0/unread-count` | 未読数 |
 | `GET /reader/api/0/stream/contents/{stream-id}` | アイテム取得 |
 | `GET /reader/api/0/stream/items/ids` | アイテム ID 取得 |
 | `POST /reader/api/0/stream/items/contents` | アイテム全文取得 |
 | `POST /reader/api/0/edit-tag` | 既読/スター操作 |
+| `POST /reader/api/0/rename-tag` | フォルダ名の変更 |
+| `POST /reader/api/0/disable-tag` | フォルダの削除 |
 | `POST /reader/api/0/mark-all-as-read` | 一括既読 |
 
 上の各パスは `/api/greader.php` を前置した FreshRSS 入口でも利用できる。

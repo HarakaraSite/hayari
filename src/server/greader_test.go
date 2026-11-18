@@ -860,6 +860,177 @@ func TestGreaderMarkAllAsReadWithTimestamp(t *testing.T) {
 	}
 }
 
+func TestFreshRSSMarkAllAsReadRejectsInvalidScope(t *testing.T) {
+	srv, ts := newTestServer(t)
+	token := loginAt(t, ts, freshRSSGReaderPrefix+"/accounts/ClientLogin")
+	feed := seedFeed(t, srv.db, "https://example.com/in-folder.xml", "Current folder")
+	other := seedFeed(t, srv.db, "https://example.com/other.xml", "")
+	seedItems(t, srv.db, feed.ID, 2)
+	seedItems(t, srv.db, other.ID, 1)
+	path := freshRSSGReaderPrefix + "/reader/api/0/mark-all-as-read"
+
+	for _, form := range []url.Values{
+		{},
+		{"s": {"user/-/label/Old folder"}},
+		{"s": {"reading-list"}},
+		{"s": {"user/-/state/com.google/reading-list", "user/-/label/Old folder"}},
+		{"s": {"feed/https://example.com/missing.xml"}},
+		{"s": {"unsupported stream"}},
+		{"s": {"user/-/label/Current folder"}, "ts": {"invalid"}},
+	} {
+		resp := grPost(t, ts, token, path, form)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("mark with %v = HTTP %d, want 400", form, resp.StatusCode)
+		}
+	}
+	unread := storage.ItemFilter{Status: "unread"}
+	if count, err := srv.db.CountItems(unread); err != nil || count != 3 {
+		t.Fatalf("unread after rejected requests = %d, %v, want 3", count, err)
+	}
+
+	resp := grPost(t, ts, token, path, url.Values{"s": {"user/-/label/Current folder"}, "ts": {"0"}})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("mark folder with ts=0 = HTTP %d", resp.StatusCode)
+	}
+	remaining, err := srv.db.ListItems(unread, 5, 0)
+	if err != nil || len(remaining) != 1 || remaining[0].FeedID != other.ID {
+		t.Fatalf("unread after marking folder = %+v, %v, want only the other feed", remaining, err)
+	}
+}
+
+func TestFreshRSSContentsDecimalAndLegacyContinuation(t *testing.T) {
+	srv, ts := newTestServer(t)
+	token := loginAt(t, ts, freshRSSGReaderPrefix+"/accounts/ClientLogin")
+	feed := seedFeed(t, srv.db, "https://example.com/contents.xml", "")
+	items := seedItems(t, srv.db, feed.ID, 5)
+	path := fmt.Sprintf("%s/reader/api/0/stream/contents/feed/%d?n=2", freshRSSGReaderPrefix, feed.ID)
+
+	type page struct {
+		ID           string `json:"id"`
+		Updated      int64  `json:"updated"`
+		Continuation string `json:"continuation"`
+		Items        []struct {
+			ID string `json:"id"`
+		} `json:"items"`
+	}
+	var first page
+	decodeJSON(t, grGet(t, ts, token, path), &first)
+	if first.ID != "user/-/state/com.google/reading-list" || first.Updated <= 0 ||
+		first.Continuation != strconv.FormatInt(items[1].ID, 10) {
+		t.Fatalf("first page = %+v", first)
+	}
+	legacy := encodeItemCursor(items[1].Date.UTC().Format(time.RFC3339Nano), items[1].ID)
+	for _, cursor := range []string{first.Continuation, legacy} {
+		var next page
+		decodeJSON(t, grGet(t, ts, token, path+"&c="+url.QueryEscape(cursor)), &next)
+		if len(next.Items) != 2 || next.Items[0].ID != fmt.Sprintf("tag:google.com,2005:reader/item/%016x", items[2].ID) {
+			t.Errorf("page for c=%q: %+v", cursor, next)
+		}
+	}
+}
+
+func TestFreshRSSContentsContinuationSurvivesUnsubscribe(t *testing.T) {
+	srv, ts := newTestServer(t)
+	token := loginAt(t, ts, freshRSSGReaderPrefix+"/accounts/ClientLogin")
+	kept := seedFeed(t, srv.db, "https://example.com/kept.xml", "")
+	removed := seedFeed(t, srv.db, "https://example.com/removed.xml", "")
+	date := time.Now().Add(-time.Hour)
+	if err := srv.db.CreateItems([]storage.Item{
+		{FeedID: kept.ID, GUID: "kept", Title: "Kept", Date: date.Add(time.Minute)},
+		{FeedID: removed.ID, GUID: "cursor", Title: "Cursor", Date: date},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	path := freshRSSGReaderPrefix + "/reader/api/0/stream/contents/reading-list?n=1"
+	type page struct {
+		Continuation string `json:"continuation"`
+		Items        []struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		} `json:"items"`
+	}
+	var first page
+	decodeJSON(t, grGet(t, ts, token, path), &first)
+	if len(first.Items) != 1 || first.Items[0].Title != "Cursor" || first.Continuation == "" {
+		t.Fatalf("first page = %+v, want the most recently saved article", first)
+	}
+	if err := srv.db.DeleteFeed(removed.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.db.CreateItems([]storage.Item{{FeedID: kept.ID, GUID: "new", Title: "New", Date: date.Add(-time.Minute)}}); err != nil {
+		t.Fatal(err)
+	}
+	var next page
+	decodeJSON(t, grGet(t, ts, token, path+"&c="+first.Continuation), &next)
+	if len(next.Items) != 1 || next.Items[0].Title != "Kept" {
+		t.Errorf("next page = %+v, want Kept", next)
+	}
+	var restarted page
+	decodeJSON(t, grGet(t, ts, token, path), &restarted)
+	if len(restarted.Items) != 1 || restarted.Items[0].Title != "New" || restarted.Items[0].ID == first.Items[0].ID {
+		t.Errorf("new first page = %+v, want New with a different article ID", restarted)
+	}
+}
+
+func TestFreshRSSStreamScopeAndFilters(t *testing.T) {
+	srv, ts := newTestServer(t)
+	token := loginAt(t, ts, freshRSSGReaderPrefix+"/accounts/ClientLogin")
+	feed := seedFeed(t, srv.db, "https://example.com/scoped.xml?format=rss&lang=en", "")
+	other := seedFeed(t, srv.db, "https://example.com/other.xml", "")
+	seedItems(t, srv.db, other.ID, 1)
+	backdated := time.Now().Add(-48 * time.Hour)
+	if err := srv.db.CreateItems([]storage.Item{
+		{FeedID: feed.ID, GUID: "backdated", Title: "Backdated", Date: backdated},
+		{FeedID: feed.ID, GUID: "starred", Title: "Starred", Date: backdated},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	items, err := srv.db.ListItems(storage.ItemFilter{FeedID: &feed.ID}, 2, 0)
+	if err != nil || len(items) != 2 {
+		t.Fatalf("seed items = %+v, %v", items, err)
+	}
+	if err := srv.db.SetStarred(items[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+	path := freshRSSGReaderPrefix + "/reader/api/0/stream/items/ids?"
+	cutoff := strconv.FormatInt(time.Now().Add(-time.Hour).Unix(), 10)
+	for _, tc := range []struct {
+		name  string
+		query url.Values
+		want  int
+	}{
+		{"URL scope", url.Values{"s": {"feed/" + feed.FeedURL}}, 2},
+		{"missing URL", url.Values{"s": {"feed/https://example.com/missing.xml"}}, 0},
+		{"missing folder", url.Values{"s": {"user/-/label/Missing folder"}}, 0},
+		{"exclude stars", url.Values{"s": {"feed/" + feed.FeedURL}, "xt": {"user/-/state/com.google/starred"}}, 1},
+		{"contradictory stars", url.Values{"s": {"user/-/state/com.google/starred"}, "xt": {"user/-/state/com.google/starred"}}, 0},
+		{"ot on newly fetched backdated items", url.Values{"s": {"feed/" + feed.FeedURL}, "ot": {cutoff}}, 2},
+		{"nt excludes newly fetched backdated items", url.Values{"s": {"feed/" + feed.FeedURL}, "nt": {cutoff}}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var response struct {
+				Refs []map[string]string `json:"itemRefs"`
+			}
+			decodeJSON(t, grGet(t, ts, token, path+tc.query.Encode()), &response)
+			if len(response.Refs) != tc.want {
+				t.Errorf("got %d IDs, want %d", len(response.Refs), tc.want)
+			}
+		})
+	}
+	var entries struct {
+		Items []struct {
+			Title string `json:"title"`
+		} `json:"items"`
+	}
+	stream := freshRSSGReaderPrefix + "/reader/api/0/stream/contents/feed/" + url.PathEscape(feed.FeedURL)
+	decodeJSON(t, grGet(t, ts, token, stream+"?"+url.Values{"xt": {"user/-/state/com.google/starred"}}.Encode()), &entries)
+	if len(entries.Items) != 1 || entries.Items[0].Title != "Backdated" {
+		t.Errorf("feed URL path filtered entries = %+v", entries)
+	}
+}
+
 func TestGreaderQuickAdd(t *testing.T) {
 	srv, ts := newTestServer(t)
 	token := login(t, ts)

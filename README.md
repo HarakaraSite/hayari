@@ -211,14 +211,10 @@ Reader API. Both endpoint forms provide the same API:
 - FreshRSS form: `/api/greader.php/accounts/ClientLogin` and
   `/api/greader.php/reader/api/0/...`
 
-The implementation is verified with ReadKit and NetNewsWire. It supports
-authentication, subscription and folder synchronization, unread and starred
-state, article retrieval, `edit-tag`, and mark-all-as-read.
-
-It is not a complete implementation of either API. For example, `rename-tag`
-and `disable-tag` are not implemented because they are outside the verified
-client workflows. See [the API reference](docs/freshrss-api.md) for the
-supported endpoint set and limitations.
+Basic synchronization was verified with ReadKit and NetNewsWire. The API
+supports authentication, subscriptions, folder management, unread and starred
+state, article retrieval, mark-all-as-read, and OPML import. See
+[the API reference](docs/freshrss-api.md) for endpoint details and limitations.
 
 ## License
 

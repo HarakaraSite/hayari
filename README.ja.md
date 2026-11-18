@@ -194,11 +194,8 @@ Hayari は FreshRSS の `greader.php` を基準にした Google Reader API の�
 - FreshRSS 形式: `/api/greader.php/accounts/ClientLogin` と
   `/api/greader.php/reader/api/0/...`
 
-ReadKit と NetNewsWire による動作を確認しています。認証、フィードとフォルダの同期、
-未読・スター状態、記事取得、`edit-tag`、一括既読をサポートします。
-
-FreshRSS API／Google Reader API の完全な実装ではありません。たとえば `rename-tag` と
-`disable-tag` は、確認済みクライアントのワークフロー対象外のため未実装です。対応する
+基本同期は ReadKit と NetNewsWire で確認済みです。認証、購読・フォルダの管理、
+未読・スター状態、記事取得、一括既読、OPML 取り込みをサポートします。
 エンドポイントと制限事項は [API リファレンス](docs/freshrss-api.ja.md) を参照してください。
 
 ## ライセンス

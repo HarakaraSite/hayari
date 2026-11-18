@@ -107,6 +107,13 @@ var migrations = []string{
 	  OR (NEW.title_translation_state = 'translated') != (NEW.translated_title IS NOT NULL)
 	  OR (NEW.title_translation_state = 'processing') != (NEW.title_translation_claim IS NOT NULL)
 	BEGIN SELECT RAISE(ABORT, 'invalid title translation state'); END`,
+	// 31: first storage time for GReader incremental sync. Older rows have no recorded time.
+	`ALTER TABLE items ADD COLUMN stored_at INTEGER`,
+	// 32: preserve the largest assigned article ID across reader synchronization.
+	`CREATE TABLE item_id_sequence AS SELECT COALESCE(MAX(id), 0) AS last_id FROM items`,
+	// 33
+	`CREATE TRIGGER items_advance_id_sequence AFTER INSERT ON items
+	BEGIN UPDATE item_id_sequence SET last_id = MAX(last_id, NEW.id); END`,
 }
 
 func (s *Storage) migrate() error {
@@ -125,10 +132,7 @@ func (s *Storage) migrate() error {
 		if count > 0 {
 			continue
 		}
-		if _, err := s.db.Exec(sql); err != nil {
-			return err
-		}
-		if _, err := s.db.Exec("INSERT INTO schema_migrations (version) VALUES (?)", i); err != nil {
+		if err := s.applyMigration(i, sql); err != nil {
 			return err
 		}
 		if i == 21 {
@@ -139,4 +143,19 @@ func (s *Storage) migrate() error {
 		return s.reapplyTitleFilterKeywords()
 	}
 	return nil
+}
+
+func (s *Storage) applyMigration(version int, statement string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(statement); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("INSERT INTO schema_migrations (version) VALUES (?)", version); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

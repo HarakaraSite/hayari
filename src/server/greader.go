@@ -2,8 +2,11 @@ package server
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -47,12 +50,16 @@ func (s *Server) registerGReaderHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/reader/api/0/subscription/list", gr(s.greaderSubscriptionList))
 	mux.HandleFunc("/reader/api/0/subscription/edit", gr(s.greaderSubscriptionEdit))
 	mux.HandleFunc("/reader/api/0/subscription/quickadd", gr(s.greaderSubscriptionQuickAdd))
+	mux.HandleFunc("/reader/api/0/subscription/import", gr(s.greaderSubscriptionImport))
 	mux.HandleFunc("/reader/api/0/unread-count", gr(s.greaderUnreadCount))
 	mux.HandleFunc("/reader/api/0/tag/list", gr(s.greaderTagList))
+	mux.HandleFunc("/reader/api/0/stream/contents", gr(s.greaderStreamContents))
 	mux.HandleFunc("/reader/api/0/stream/contents/", gr(s.greaderStreamContents))
 	mux.HandleFunc("/reader/api/0/stream/items/ids", gr(s.greaderStreamItemIDs))
 	mux.HandleFunc("/reader/api/0/stream/items/contents", gr(s.greaderStreamItemContents))
 	mux.HandleFunc("/reader/api/0/edit-tag", gr(s.greaderEditTag))
+	mux.HandleFunc("/reader/api/0/rename-tag", gr(s.greaderRenameTag))
+	mux.HandleFunc("/reader/api/0/disable-tag", gr(s.greaderDisableTag))
 	mux.HandleFunc("/reader/api/0/mark-all-as-read", gr(s.greaderMarkAllAsRead))
 }
 
@@ -460,7 +467,8 @@ func (s *Server) greaderUnreadCount(w http.ResponseWriter, r *http.Request) {
 // --- Stream ---
 
 func (s *Server) greaderStreamContents(w http.ResponseWriter, r *http.Request) {
-	streamID := strings.TrimPrefix(r.URL.Path, "/reader/api/0/stream/contents/")
+	streamID := strings.TrimPrefix(r.URL.Path, "/reader/api/0/stream/contents")
+	streamID = strings.TrimPrefix(streamID, "/")
 	if streamID == "" {
 		streamID = r.URL.Query().Get("s")
 	}
@@ -468,19 +476,20 @@ func (s *Server) greaderStreamContents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) greaderStreamItemIDs(w http.ResponseWriter, r *http.Request) {
+	// NetNewsWire uses Date as the next ot bound. Start it before reading the DB.
+	w.Header().Set("Date", time.Now().UTC().Format(http.TimeFormat))
 	streamID := r.URL.Query().Get("s")
-	filter := s.buildStreamFilter(r, streamID)
-	if err := s.applyItemIDContinuation(&filter, r.URL.Query().Get("c")); err != nil {
+	filter, err := s.buildStreamFilter(r, streamID)
+	if err != nil {
+		httpError(w, err, http.StatusInternalServerError)
+		return
+	}
+	if err := applyItemIDContinuation(&filter, r.URL.Query().Get("c")); err != nil {
 		http.Error(w, "invalid continuation", http.StatusBadRequest)
 		return
 	}
 
-	n := 1000
-	if ns := r.URL.Query().Get("n"); ns != "" {
-		if parsed, err := strconv.Atoi(ns); err == nil && parsed > 0 {
-			n = parsed
-		}
-	}
+	n := greaderPageSize(r, 1000)
 	items, err := s.db.ListItems(filter, n+1, 0)
 	if err != nil {
 		httpError(w, err, 500)
@@ -537,18 +546,17 @@ func (s *Server) greaderStreamItemContents(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) serveStreamItems(w http.ResponseWriter, r *http.Request, streamID string) {
-	filter := s.buildStreamFilter(r, streamID)
-	if err := applyContinuation(&filter, r.URL.Query().Get("c")); err != nil {
+	filter, err := s.buildStreamFilter(r, streamID)
+	if err != nil {
+		httpError(w, err, http.StatusInternalServerError)
+		return
+	}
+	if err := applyStreamContinuation(&filter, r.URL.Query().Get("c")); err != nil {
 		http.Error(w, "invalid continuation", http.StatusBadRequest)
 		return
 	}
 
-	n := 20
-	if ns := r.URL.Query().Get("n"); ns != "" {
-		if parsed, err := strconv.Atoi(ns); err == nil && parsed > 0 {
-			n = parsed
-		}
-	}
+	n := greaderPageSize(r, 20)
 	// Fetch one extra to detect if there are more pages
 	items, err := s.db.ListItems(filter, n+1, 0)
 	if err != nil {
@@ -558,7 +566,7 @@ func (s *Server) serveStreamItems(w http.ResponseWriter, r *http.Request, stream
 
 	feedMap, folderTitles := s.loadFeedMaps()
 
-	entries := make([]map[string]interface{}, 0, n)
+	entries := make([]map[string]interface{}, 0, min(n, len(items)))
 	for i := range items {
 		if i >= n {
 			break
@@ -567,12 +575,17 @@ func (s *Server) serveStreamItems(w http.ResponseWriter, r *http.Request, stream
 	}
 
 	resp := map[string]interface{}{
-		"id":    streamID,
-		"items": entries,
+		"id":      "user/-/state/com.google/reading-list",
+		"updated": time.Now().Unix(),
+		"items":   entries,
 	}
 	if len(items) > n {
 		last := items[n-1]
-		resp["continuation"] = encodeItemCursor(last.Date.UTC().Format(time.RFC3339Nano), last.ID)
+		if filter.OrderByID {
+			resp["continuation"] = strconv.FormatInt(last.ID, 10)
+		} else {
+			resp["continuation"] = encodeItemCursor(last.Date.UTC().Format(time.RFC3339Nano), last.ID)
+		}
 	}
 	writeJSON(w, resp)
 }
@@ -595,69 +608,105 @@ func (s *Server) loadFeedMaps() (map[int64]*storage.Feed, map[int64]string) {
 }
 
 // buildStreamFilter constructs an ItemFilter from a stream ID and request query params.
-func (s *Server) buildStreamFilter(r *http.Request, streamID string) storage.ItemFilter {
-	filter := s.streamIDToFilter(streamID)
-
-	// xt= exclude tag (most common: xt=user/-/state/com.google/read → show unread only)
-	if xt := r.URL.Query().Get("xt"); xt != "" {
-		if xt == "user/-/state/com.google/read" && filter.Status == "" {
-			filter.Status = "unread"
-		}
+func greaderPageSize(r *http.Request, fallback int) int {
+	if n, err := strconv.Atoi(r.URL.Query().Get("n")); err == nil && n > 0 && n < math.MaxInt {
+		return n
 	}
+	return fallback
+}
 
-	// it= include tag (override status/starred filter)
-	if it := r.URL.Query().Get("it"); it != "" {
-		f := s.streamIDToFilter(it)
-		if f.Status != "" {
-			filter.Status = f.Status
-		}
-		if f.Starred != nil {
-			filter.Starred = f.Starred
-		}
+func (s *Server) buildStreamFilter(r *http.Request, streamID string) (storage.ItemFilter, error) {
+	filter, err := s.streamIDToFilter(streamID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return storage.ItemFilter{NoMatch: true}, nil
 	}
+	if err != nil {
+		return storage.ItemFilter{}, err
+	}
+	q := r.URL.Query()
+	applyStreamState(&filter, q.Get("it"), false)
+	applyStreamState(&filter, q.Get("xt"), true)
+	filter.StoredAfter = greaderTimeParameter(q.Get("ot"))
+	filter.StoredBefore = greaderTimeParameter(q.Get("nt"))
+	filter.OldestFirst = q.Get("r") == "o"
+	filter.OrderByID = true
+	return filter, nil
+}
 
-	// ot= items published after this Unix timestamp
-	if ot := r.URL.Query().Get("ot"); ot != "" {
-		if ts, err := strconv.ParseInt(ot, 10, 64); err == nil {
-			t := time.Unix(ts, 0)
-			filter.After = &t
+func greaderTimeParameter(value string) *time.Time {
+	seconds, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || seconds == 0 {
+		return nil
+	}
+	at := time.Unix(seconds, 0)
+	return &at
+}
+
+func applyStreamState(filter *storage.ItemFilter, tag string, exclude bool) {
+	var status string
+	switch tag {
+	case "user/-/state/com.google/read":
+		status = "read"
+		if exclude {
+			status = "unread"
 		}
+	case "user/-/state/com.google/unread", "user/-/state/com.google/kept-unread":
+		status = "unread"
+		if exclude {
+			status = "read"
+		}
+	case "user/-/state/com.google/starred":
+		starred := !exclude
+		if filter.Starred != nil && *filter.Starred != starred {
+			filter.NoMatch = true
+		}
+		filter.Starred = &starred
+		return
+	default:
+		return
 	}
-
-	// r= sort order: "o" = oldest first
-	if r.URL.Query().Get("r") == "o" {
-		filter.OldestFirst = true
+	if filter.Status != "" && filter.Status != status {
+		filter.NoMatch = true
 	}
-
-	return filter
+	filter.Status = status
 }
 
 // streamIDToFilter maps a GReader stream ID to an ItemFilter.
-func (s *Server) streamIDToFilter(streamID string) storage.ItemFilter {
+func (s *Server) streamIDToFilter(streamID string) (storage.ItemFilter, error) {
 	filter := storage.ItemFilter{}
-	trueVal := true
 	switch {
-	case streamID == "" || streamID == "user/-/state/com.google/reading-list":
-		// all items — no filter
-	case streamID == "user/-/state/com.google/starred":
-		filter.Starred = &trueVal
-	case streamID == "user/-/state/com.google/read":
-		filter.Status = "read"
-	case streamID == "user/-/state/com.google/unread",
+	case streamID == "" || streamID == "reading-list" || streamID == "user/-/state/com.google/reading-list":
+		// The reading list includes all visible items.
+	case streamID == "user/-/state/com.google/starred",
+		streamID == "user/-/state/com.google/read",
+		streamID == "user/-/state/com.google/unread",
 		streamID == "user/-/state/com.google/kept-unread":
-		filter.Status = "unread"
+		applyStreamState(&filter, streamID, false)
 	case strings.HasPrefix(streamID, "feed/"):
-		idStr := strings.TrimPrefix(streamID, "feed/")
-		if id, err := strconv.ParseInt(idStr, 10, 64); err == nil {
+		ref := strings.TrimPrefix(streamID, "feed/")
+		if id, err := strconv.ParseInt(ref, 10, 64); err == nil && id > 0 {
 			filter.FeedID = &id
+			break
 		}
+		feed, err := s.db.GetFeedByURL(ref)
+		if err != nil {
+			return storage.ItemFilter{}, err
+		}
+		filter.FeedID = &feed.ID
 	case strings.HasPrefix(streamID, "user/-/label/"):
-		label := strings.TrimPrefix(streamID, "user/-/label/")
-		if folder, err := s.db.GetFolderByTitle(label); err == nil {
-			filter.FolderID = &folder.ID
+		label, ok := greaderFolderName(streamID)
+		if !ok {
+			return storage.ItemFilter{}, sql.ErrNoRows
 		}
+		id, err := s.db.GetUniqueFolderIDByTitle(label)
+		if err != nil {
+			return storage.ItemFilter{}, err
+		}
+		filter.FolderID = &id
+	default:
+		return storage.ItemFilter{}, sql.ErrNoRows
 	}
-	return filter
+	return filter, nil
 }
 
 // --- Edit tag (mark read/starred) ---
@@ -720,13 +769,42 @@ func (s *Server) greaderMarkAllAsRead(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		httpError(w, err, http.StatusBadRequest)
+		return
+	}
+	streams := r.Form["s"]
+	if len(streams) != 1 || strings.TrimSpace(streams[0]) == "" {
+		http.Error(w, "exactly one stream required", http.StatusBadRequest)
+		return
+	}
+	streamID := strings.TrimSpace(streams[0])
+	if streamID == "reading-list" {
+		http.Error(w, "use the full reading-list stream ID", http.StatusBadRequest)
+		return
+	}
+	filter, err := s.streamIDToFilter(streamID)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, "unknown stream", http.StatusBadRequest)
+		return
+	}
+	if err != nil {
+		httpError(w, err, http.StatusInternalServerError)
+		return
+	}
 
-	filter := s.streamIDToFilter(r.FormValue("s"))
-
-	// ts= nanoseconds — mark only items published before this timestamp
-	if tsStr := r.FormValue("ts"); tsStr != "" {
-		if tsNano, err := strconv.ParseInt(tsStr, 10, 64); err == nil {
+	if len(r.Form["ts"]) > 1 {
+		http.Error(w, "multiple timestamps", http.StatusBadRequest)
+		return
+	}
+	// For existing callers, a nonzero ts is a publication cutoff in nanoseconds.
+	if value := strings.TrimSpace(r.FormValue("ts")); value != "" {
+		tsNano, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || tsNano < 0 {
+			http.Error(w, "invalid timestamp", http.StatusBadRequest)
+			return
+		}
+		if tsNano > 0 {
 			t := time.Unix(0, tsNano)
 			filter.Before = &t
 		}
@@ -737,8 +815,7 @@ func (s *Server) greaderMarkAllAsRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/plain")
-	fmt.Fprint(w, "OK")
+	writeGReaderOK(w)
 }
 
 // --- Helpers ---
@@ -757,25 +834,23 @@ func parseItemID(raw string) (int64, error) {
 	return strconv.ParseInt(raw, 16, 64)
 }
 
-// applyItemIDContinuation resolves FreshRSS's decimal entry-ID continuation
-// into the date-and-ID cursor needed by the storage query.
-func (s *Server) applyItemIDContinuation(filter *storage.ItemFilter, value string) error {
-	if value == "" {
+func applyItemIDContinuation(filter *storage.ItemFilter, value string) error {
+	if value == "" || value == "0" {
 		return nil
 	}
 	id, err := strconv.ParseInt(value, 10, 64)
 	if err != nil || id < 1 {
 		return fmt.Errorf("invalid continuation")
 	}
-	item, err := s.db.GetItem(id)
-	if err != nil || item == nil {
-		return fmt.Errorf("invalid continuation")
-	}
-	filter.Cursor = &storage.ItemCursor{Date: item.Date.UTC().Format(time.RFC3339Nano), ID: item.ID}
+	filter.Cursor = &storage.ItemCursor{ID: id}
 	return nil
 }
 
-func applyContinuation(filter *storage.ItemFilter, value string) error {
+func applyStreamContinuation(filter *storage.ItemFilter, value string) error {
+	if _, err := strconv.ParseInt(value, 10, 64); err == nil {
+		return applyItemIDContinuation(filter, value)
+	}
+	// Old versions issued a date-and-ID token for stream/contents.
 	cursor, err := decodeItemCursor(value)
 	if err != nil || cursor == nil {
 		return err
@@ -785,6 +860,7 @@ func applyContinuation(filter *storage.ItemFilter, value string) error {
 		return err
 	}
 	cursor.Date = date.UTC().Format(time.RFC3339Nano)
+	filter.OrderByID = false
 	filter.Cursor = cursor
 	return nil
 }
