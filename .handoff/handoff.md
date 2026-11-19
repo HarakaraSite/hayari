@@ -30,6 +30,13 @@
 
 ## Checkpoints
 
+## 2026-11-19 v1.2.10 リリース
+
+- Web UI の手動更新中に、保存できた新着から記事一覧と未読件数に反映する修正を `4371131f321f905e2a2e44afd6d1dc1d357e2053` にコミットし、`main` と注釈付き `v1.2.10` タグを atomic push した。
+- `go mod verify`、通常テスト、`go test -race ./...`、`go vet`、JavaScript 構文確認、`git diff --check`、Chromium の API モック E2E、CGO 無効の6対象クロスビルドが成功した。Chromium では、全フィードの取得が終わる前に最初の新着と未読件数が反映されることを確認した。
+- Forgejo Actions run 24（API run ID 262）が、タグと候補 SHA の一致を確認した上で成功した。公開リリースノートに順次反映の挙動を記載した。[Forgejo Actions run 24](https://forge.harakara.site/littleisland/hayari/actions/runs/24) · [v1.2.10 リリース](https://forge.harakara.site/littleisland/hayari/releases/tag/v1.2.10)
+- 公開バイナリ6件のサイズと SHA-256 を照合した。公開 Linux amd64 版を一時 DB で起動し、版番号、ヘルスチェック、Cookie ログイン、手動更新 API、記事一覧・本文、未読件数、Google Reader API 同期、SIGTERM 終了と SQLite の整合性を確認した。
+
 ## 2026-11-19 v1.2.9 リリース
 
 - NetNewsWire などの既読・スター更新の一括保存、Web UI の本文遅延取得、未読集計と差分同期の索引を `12defb727e5b056a74cf92c32c0c51c01c57f96e` にコミットした。注釈付き `v1.2.9` と `main` を atomic push した。
