@@ -273,6 +273,9 @@ func TestRefreshFeedRetriesWhenArticleInsertFails(t *testing.T) {
 	feed := createFeedWithIcon(t, db, srv.URL+"/feed")
 	w := New(db)
 	w.RefreshFeed(feed.ID)
+	if got := w.ArticleRevision(); got != 0 {
+		t.Fatalf("article revision after failed insert = %d, want 0", got)
+	}
 	updated, err := db.GetFeed(feed.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -296,6 +299,9 @@ func TestRefreshFeedRetriesWhenArticleInsertFails(t *testing.T) {
 	if conditionalRequests.Load() != 0 {
 		t.Fatal("retry used validators from the failed response")
 	}
+	if got := w.ArticleRevision(); got != 1 {
+		t.Fatalf("article revision after successful insert = %d, want 1", got)
+	}
 	if count, err := db.CountItems(storage.ItemFilter{}); err != nil || count != 2 {
 		t.Fatalf("retried article count = %d, %v, want 2", count, err)
 	}
@@ -313,6 +319,9 @@ func TestRefreshFeedRetriesWhenArticleInsertFails(t *testing.T) {
 	if conditionalRequests.Load() != 1 {
 		t.Fatal("next refresh did not use the stored validators")
 	}
+	if got := w.ArticleRevision(); got != 1 {
+		t.Fatalf("article revision after 304 = %d, want 1", got)
+	}
 }
 
 func TestRefreshFeedNoDuplicates(t *testing.T) {
@@ -328,6 +337,9 @@ func TestRefreshFeedNoDuplicates(t *testing.T) {
 	count, _ := db.CountItems(storage.ItemFilter{})
 	if count != 2 {
 		t.Errorf("after 2 refreshes count = %d, want 2 (no duplicates)", count)
+	}
+	if got := w.ArticleRevision(); got != 1 {
+		t.Errorf("article revision after reading the same articles twice = %d, want 1", got)
 	}
 }
 

@@ -105,6 +105,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, map[string]interface{}{
 		"running":            s.worker.Running(),
+		"article_revision":   s.worker.ArticleRevision(),
 		"version":            s.Version,
 		"title_translations": s.translations.Status(),
 	})
@@ -436,8 +437,12 @@ func (s *Server) handleFeedsRefresh(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	// A fast feed can commit before the browser first polls status.
+	revision := s.worker.ArticleRevision()
 	s.worker.RefreshAllAsync()
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]uint64{"article_revision": revision})
 }
 
 // --- Items ---

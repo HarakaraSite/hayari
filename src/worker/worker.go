@@ -31,6 +31,8 @@ type Worker struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 
+	articleRevision atomic.Uint64
+
 	refreshMu sync.Mutex
 	refreshes map[int64]chan struct{}
 	queue     []feedRefresh
@@ -58,6 +60,11 @@ func New(db *storage.Storage) *Worker {
 
 func (w *Worker) Running() bool {
 	return w.running.Load()
+}
+
+// ArticleRevision advances after a feed refresh commits new articles.
+func (w *Worker) ArticleRevision() uint64 {
+	return w.articleRevision.Load()
 }
 
 func (w *Worker) Start() {
@@ -310,6 +317,9 @@ func (w *Worker) fetchAndStoreFeed(feed *storage.Feed) error {
 	}
 	if err := w.db.StoreFeedRefresh(feed.ID, parsed.Title, parsed.SiteURL, lm, etag, items); err != nil {
 		return fmt.Errorf("store feed refresh: %w", err)
+	}
+	if len(items) > 0 {
+		w.articleRevision.Add(1)
 	}
 
 	// Fetch favicon once when not yet stored. Some Atom feeds, including the

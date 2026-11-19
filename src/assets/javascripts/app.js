@@ -111,20 +111,20 @@ const App = (() => {
   }
 
   // ── Sidebar ────────────────────────────────────────────────────
-  async function loadSidebar({ reloadItems = false } = {}) {
+  async function loadSidebar({ reloadItems = false, keepPosition = false } = {}) {
     const [feeds, folders] = await Promise.all([
       API.getFeeds(), API.getFolders(), reloadItems ? null : loadStats(false),
     ]);
     state.feeds    = feeds   || [];
     state.folders  = folders || [];
     if (reloadItems) {
-      await loadItems(true, { refreshStats: false });
+      await loadItems(true, { refreshStats: false, keepPosition });
       await loadStats(false);
     }
     renderSidebar();
   }
 
-  async function loadStats(updateSidebar = true) {
+  async function loadStats(updateSidebar = true, { keepEmptyUnreadFeeds = true } = {}) {
     const request = ++latestStatsRequest;
     try {
       const stats = await API.getStats();
@@ -137,7 +137,7 @@ const App = (() => {
       const counts = starredView ? state.starStats : state.feedStats;
       const feeds = Object.keys(previousCounts);
       if (feeds.length === Object.keys(counts).length && feeds.every(id => previousCounts[id] === counts[id])) return;
-      if (state.filter === 'unread' && state.unreadListNeedsRefresh) {
+      if (keepEmptyUnreadFeeds && state.filter === 'unread' && state.unreadListNeedsRefresh) {
         syncUnreadSidebarCounts();
       } else {
         renderSidebar();
@@ -397,11 +397,12 @@ const App = (() => {
   }
 
   // ── Item list ──────────────────────────────────────────────────
-  async function loadItems(reset = true, { refreshStats = true, translationRevision } = {}) {
+  async function loadItems(reset = true, {
+    refreshStats = true, translationRevision, keepPosition = translationRevision !== undefined,
+  } = {}) {
     if (!reset && (state.loading || !state.nextCursor)) return;
 
-    const keepPosition = translationRevision !== undefined;
-    if (keepPosition && state.loading && latestItemsRequest?.translationRevision === translationRevision) return;
+    if (translationRevision !== undefined && state.loading && latestItemsRequest?.translationRevision === translationRevision) return;
 
     const request = { translationRevision };
     latestItemsRequest = request;
@@ -415,7 +416,8 @@ const App = (() => {
 
     state.loading = true;
     const params = buildItemParams();
-    params.limit = keepPosition ? Math.max(PAGE_SIZE, state.items.length + TITLE_TRANSLATION_LIMIT) : PAGE_SIZE;
+    const extraResults = translationRevision !== undefined ? TITLE_TRANSLATION_LIMIT : 0;
+    params.limit = keepPosition ? Math.max(PAGE_SIZE, state.items.length + extraResults) : PAGE_SIZE;
     params.cursor = reset ? null : state.nextCursor;
 
     try {
@@ -431,7 +433,7 @@ const App = (() => {
       state.nextCursor = data?.next_cursor || null;
       state.translationRevision = revision;
       if (keepPosition) {
-        replaceSearchResults(newItems);
+        replaceItemList(newItems);
       } else {
         state.items.push(...newItems);
         renderItems(newItems);
@@ -452,7 +454,7 @@ const App = (() => {
       retry.type = 'button';
       retry.className = 'outline small';
       retry.textContent = 'Retry';
-      retry.addEventListener('click', () => loadItems(reset, { translationRevision }));
+      retry.addEventListener('click', () => loadItems(reset, { refreshStats, translationRevision, keepPosition }));
       itemListEmpty.textContent = reset ? 'Failed to load items. ' : 'Failed to load more items. ';
       itemListEmpty.appendChild(retry);
       itemListEmpty.hidden = false;
@@ -461,7 +463,7 @@ const App = (() => {
     }
   }
 
-  function replaceSearchResults(items) {
+  function replaceItemList(items) {
     const scrollTop = itemList.scrollTop;
     const listTop = itemList.getBoundingClientRect().top;
     const anchor = scrollTop > 0 && [...itemList.children].find(row =>
@@ -1119,14 +1121,22 @@ const App = (() => {
       btnRefresh.setAttribute('aria-busy', 'true');
       btnRefresh.disabled = true;
       try {
-        await API.refreshFeeds();
+        const refresh = await API.refreshFeeds();
+        let articleRevision = refresh?.article_revision;
         let status = await API.getStatus();
         while (status?.running) {
+          if (status.article_revision !== articleRevision) {
+            articleRevision = status.article_revision;
+            await Promise.all([
+              loadItems(true, { refreshStats: false, keepPosition: true }),
+              loadStats(true, { keepEmptyUnreadFeeds: false }),
+            ]);
+          }
           await new Promise(resolve => setTimeout(resolve, 500));
           status = await API.getStatus();
         }
         if (!status) return;
-        await loadSidebar({ reloadItems: true });
+        await loadSidebar({ reloadItems: true, keepPosition: true });
       } catch (err) {
         alert('Refresh failed: ' + err.message);
       } finally {

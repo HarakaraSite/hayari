@@ -15,8 +15,7 @@ const API = (() => {
     if (!res.ok) {
       throw new Error(`${method} ${path} → ${res.status}`);
     }
-    // Successful mutation endpoints may intentionally return no body
-    // (for example, refresh returns 202 Accepted while work continues).
+    // Successful mutation endpoints may intentionally return no body.
     const responseBody = await res.text();
     return responseBody ? JSON.parse(responseBody) : null;
   }

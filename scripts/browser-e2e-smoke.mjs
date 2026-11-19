@@ -156,6 +156,7 @@ async function main() {
     const detailGates = new Map();
     const retryDetailPath = '/api/items/102';
     let refreshRunning = false;
+    let articleRevision = 0;
     const translationStatus = { running: false, revision: 0 };
     let firstPageGate;
     let readGate;
@@ -189,7 +190,7 @@ async function main() {
 
       if (path === '/api/status') {
         if (translationStatusGate) await translationStatusGate;
-        return ok({ running: refreshRunning, version: 'e2e', title_translations: translationStatus });
+        return ok({ running: refreshRunning, article_revision: articleRevision, version: 'e2e', title_translations: translationStatus });
       }
       if (path === '/api/capabilities') return ok({ title_translation: true });
       if (path === '/api/settings') {
@@ -209,7 +210,9 @@ async function main() {
       }
       if (path === '/api/feeds/refresh' && req.method() === 'POST') {
         refreshRunning = true;
-        return route.fulfill({ status: 202, body: '' });
+        return route.fulfill({
+          status: 202, contentType: 'application/json', body: JSON.stringify({ article_revision: articleRevision }),
+        });
       }
       if (path === '/api/feeds/1/title-translations' && req.method() === 'POST') {
         translationStatus.running = true;
@@ -484,18 +487,30 @@ async function main() {
       'reading once decreases the badge once',
     );
 
-    // 10. The refresh button waits for acquisition before reloading the sidebar and items.
+    // 10. Articles and unread counts update as soon as a feed saves new articles.
     const beforeRefresh = apiCalls.length;
     await page.click('#btn-refresh');
-    await waitFor(() => apiCalls.slice(beforeRefresh).some((c) => c.path === '/api/status'), 'refresh status request');
-    assert(await page.locator('#btn-refresh').isDisabled(), 'refresh stays busy while acquisition is running');
-    assert(!apiCalls.slice(beforeRefresh).some((c) => c.path === '/api/stats'), 'sidebar waits for acquisition');
+    await waitFor(
+      () => apiCalls.slice(beforeRefresh).filter(c => c.path === '/api/status').length >= 2,
+      'refresh status polling',
+    );
+    assert(!apiCalls.slice(beforeRefresh).some(c => ['/api/items', '/api/stats'].includes(c.path)),
+      'polling without new articles skips list and count requests');
     allItems.unshift(makeItem(99, 1));
+    articleRevision++;
+    await waitFor(
+      async () => await page.locator('#item-list .item-entry').first().getAttribute('data-item-id') === '99' &&
+        await page.locator('[data-feed-id="1"] .sidebar-count-badge').textContent() === '45',
+      'list and unread count update while acquisition is still running',
+    );
+    assert((await detailBody.textContent()).includes('Body of article 100'), 'refresh preserves the open article');
+
+    allItems.unshift({ ...makeItem(98, 1), status: 'unread' });
+    articleRevision++;
     refreshRunning = false;
     await waitFor(async () => await page.locator('#btn-refresh').isEnabled(), 'refresh completes');
-    assert(await page.locator('[data-feed-id="1"] .sidebar-count-badge').textContent() === '45', 'badge includes the new article');
-    assert(await page.locator('#item-list .item-entry').first().getAttribute('data-item-id') === '99', 'list includes the new article');
-    assert(apiCalls.slice(beforeRefresh).filter(c => c.path === '/api/stats').length === 1, 'refresh requests counts once');
+    assert(await page.locator('[data-feed-id="1"] .sidebar-count-badge').textContent() === '46', 'badge includes the last article');
+    assert(await page.locator('#item-list .item-entry').first().getAttribute('data-item-id') === '98', 'list includes the last article');
 
     // 11. Selecting a feed again includes articles saved while the page was open.
     allItems.unshift(makeItem(97, 1));
@@ -506,7 +521,7 @@ async function main() {
       'reopening the feed refreshes the counts',
     );
     await waitFor(
-      async () => await page.locator('[data-feed-id="1"] .sidebar-count-badge').textContent() === '46',
+      async () => await page.locator('[data-feed-id="1"] .sidebar-count-badge').textContent() === '47',
       'badge includes the article saved in the background',
     );
     assert(await page.locator('#item-list .item-entry').first().getAttribute('data-item-id') === '97', 'list includes the background article');
